@@ -31,8 +31,11 @@ Just open `index.html` directly in a browser, or serve the folder with any stati
 
 ## Deployed
 
-- Live at: **https://miente1.github.io/rabbitgotchi/** (GitHub Pages, repo `Miente1/rabbitgotchi`, served from `main` branch root)
+- Live at: **https://miente1.github.io/rabbitgotchi/** (GitHub Pages, public repo `Miente1/rabbitgotchi`, served from `main` branch root)
+- Icon: `icon.png`, also hosted alongside `index.html`
 - Install QR code: `install-qr.png` in this folder — scan it from the R1's Creations card to install.
+
+**QR code format**: the R1 Creations scanner does NOT accept a bare URL — it expects the QR to encode a JSON object: `{"title", "url", "description", "iconUrl", "themeColor"}` (confirmed from the official `qr` tool in `rabbit-hmi-oss/creations-sdk`). A plain-URL QR fails with "not a valid creation" on the device. Regenerate with the same schema if the URL/icon ever changes.
 
 To redeploy after editing `index.html`, just commit and push — Pages rebuilds automatically:
 ```
