@@ -23,7 +23,11 @@ Single file: `index.html` (no build step, no backend, no external assets).
 
 ## Storage
 
-Uses `window.creationStorage.plain` (the real R1 Creations persistence API) when available, and falls back to `localStorage` automatically when running in a normal browser — so you can develop and test on your PC before deploying.
+Writes to both `window.creationStorage.plain` (the documented R1 Creations persistence API) and `localStorage` on every save, and reads back whichever has data.
+
+**Confirmed on real R1 hardware (2026-07-26): `window.creationStorage` does not exist on this device's firmware at all** (`CS:n` in the on-screen diagnostic). `localStorage` is what's actually keeping saves alive, and has been confirmed to survive a full exit/reopen cycle on-device. Keep the dual-write in place regardless — costs nothing and covers other firmware versions where `creationStorage` might exist.
+
+A small always-on diagnostic reads in the bottom-right corner: `<BUILD_ID> · CS:y/n · save:ok/FAIL`. Useful for any future on-device debugging since there's no console access.
 
 ## Testing locally on this PC
 
