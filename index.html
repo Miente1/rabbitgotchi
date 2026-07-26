@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=240, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Rabbitgotchi</title>
+<style>
+  html,body{margin:0;padding:0;background:#111;overflow:hidden;}
+  body{display:flex;align-items:center;justify-content:center;height:100vh;font-family:'Courier New',monospace;-webkit-user-select:none;user-select:none;}
+  #app{width:240px;height:282px;position:relative;background:#000;border:2px solid #333;box-shadow:0 0 12px rgba(0,0,0,.6);overflow:hidden;}
+
+  #stats{height:24px;display:flex;align-items:center;justify-content:space-around;background:#1a1a1a;padding:0 2px;box-sizing:border-box;}
+  .stat{display:flex;align-items:center;font-size:9px;color:#ddd;gap:2px;}
+  .bar{width:28px;height:6px;background:#333;border:1px solid #555;position:relative;}
+  .bar>i{position:absolute;left:0;top:0;bottom:0;display:block;}
+  .b-hunger>i{background:#e8a33d;}
+  .b-happy>i{background:#e84dd6;}
+  .b-energy>i{background:#4dc9e8;}
+  .b-health>i{background:#4de861;}
+
+  #stage-canvas{display:block;background:#cfe8ff;}
+
+  #menu{height:48px;display:flex;background:#1a1a1a;}
+  .icon-btn{flex:1;display:flex;align-items:center;justify-content:center;font-size:18px;color:#ccc;background:#222;border-top:2px solid #000;box-sizing:border-box;}
+  .icon-btn.selected{background:#3a3a3a;border-top:2px solid #4de861;color:#fff;}
+
+  #toast{position:absolute;left:0;right:0;bottom:52px;text-align:center;font-size:10px;color:#fff;background:rgba(0,0,0,.7);padding:4px 0;opacity:0;pointer-events:none;transition:opacity .2s;}
+  #toast.show{opacity:1;}
+
+  #overlay{position:absolute;inset:0;background:rgba(0,0,0,.85);color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-size:12px;gap:10px;padding:10px;box-sizing:border-box;}
+  #overlay.show{display:flex;}
+  #overlay button{font-family:inherit;font-size:11px;padding:6px 14px;background:#4de861;border:none;color:#000;}
+
+  #hud{position:absolute;top:26px;left:3px;font-size:8px;color:#333;text-shadow:0 1px 0 rgba(255,255,255,.3);}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stats">
+    <div class="stat">🍔<div class="bar b-hunger"><i style="width:100%"></i></div></div>
+    <div class="stat">🙂<div class="bar b-happy"><i style="width:100%"></i></div></div>
+    <div class="stat">⚡<div class="bar b-energy"><i style="width:100%"></i></div></div>
+    <div class="stat">❤<div class="bar b-health"><i style="width:100%"></i></div></div>
+  </div>
+
+  <canvas id="stage-canvas" width="240" height="210"></canvas>
+  <div id="hud"></div>
+
+  <div id="menu"></div>
+
+  <div id="toast"></div>
+  <div id="overlay"></div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------- Constants ---------- */
+var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
+var EGG_HATCH_MS   = 5*MIN;
+var BABY_TO_CHILD  = 1*DAY;
+var CHILD_TO_TEEN  = 3*DAY;
+var TEEN_TO_ADULT  = 5*DAY;
+
+var HUNGER_RATE   = 100/(6*60);   // per minute, empty in 6h
+var HAPPY_RATE    = 100/(8*60);   // empty in 8h
+var ENERGY_AWAKE  = 100/(10*60);  // empty in 10h awake
+var ENERGY_SLEEP  = 100/(4*60);   // full recharge in 4h sleep
+var POOP_CHANCE_PER_MIN = 1/180;  // ~1 poop every 3h on average
+
+var ICONS = [
+  {id:'feed',       label:'🍔', name:'Feed'},
+  {id:'play',       label:'🎮', name:'Play'},
+  {id:'clean',      label:'🧹', name:'Clean'},
+  {id:'med',        label:'💊', name:'Medicine'},
+  {id:'sleep',      label:'💤', name:'Sleep'},
+  {id:'discipline', label:'✋',       name:'Scold'}
+];
+
+var STORE_KEY = 'rabbitgotchi_state_v1';
+
+/* ---------- Storage (real device storage, falls back to localStorage for desktop testing) ---------- */
+var Storage = {
+  get: function(key){
+    return new Promise(function(resolve){
+      try {
+        if (window.creationStorage && window.creationStorage.plain && window.creationStorage.plain.getItem) {
+          Promise.resolve(window.creationStorage.plain.getItem(key)).then(function(raw){
+            if (!raw) return resolve(null);
+            try { resolve(JSON.parse(decodeURIComponent(escape(atob(raw))))); }
+            catch(e){ resolve(null); }
+          }).catch(function(){ resolve(fallbackGet(key)); });
+        } else {
+          resolve(fallbackGet(key));
+        }
+      } catch(e){
+        resolve(fallbackGet(key));
+      }
+    });
+  },
+  set: function(key, value){
+    var json = JSON.stringify(value);
+    if (window.creationStorage && window.creationStorage.plain && window.creationStorage.plain.setItem) {
+      try {
+        return Promise.resolve(window.creationStorage.plain.setItem(key, btoa(unescape(encodeURIComponent(json)))));
+      } catch(e){ /* fall through */ }
+    }
+    try { localStorage.setItem(key, json); } catch(e){}
+    return Promise.resolve();
+  }
+};
+function fallbackGet(key){
+  try { var raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; }
+  catch(e){ return null; }
+}
+
+/* ---------- State ---------- */
+function freshState(){
+  var now = Date.now();
+  return {
+    stage:'egg', born:now, hatchedAt:null,
+    hunger:100, happiness:100, energy:100, health:100, weight:20,
+    poop:0, mistakes:0, sick:false, asleep:false, alive:true,
+    lastTick: now, flags:{}, deathReason:null, evolutionForm:null,
+    soundOn:true, firstRun:true
+  };
+}
+var state = null;
+var selected = 0;
+var longPressActive = false;
+
+function clamp(v){ return Math.max(0, Math.min(100, v)); }
+
+function markMistake(flag){
+  if (!state.flags[flag]){ state.flags[flag] = true; state.mistakes++; }
+}
+function clearFlag(flag){ state.flags[flag] = false; }
+
+/* ---------- Simulation ---------- */
+function hatch(){
+  state.stage = 'baby';
+  state.hatchedAt = Date.now();
+  beep(1200,0.12); beep(1600,0.12);
+  showToast('It hatched!');
+}
+
+function die(reason){
+  state.alive = false;
+  state.deathReason = reason;
+  beep(200,0.4);
+}
+
+function checkEvolution(){
+  if (!state.hatchedAt) return;
+  var age = Date.now() - state.hatchedAt;
+  if (state.stage === 'baby' && age >= BABY_TO_CHILD){
+    state.stage = 'child'; beep(900,0.1); showToast('Grew into a child!');
+  } else if (state.stage === 'child' && age >= CHILD_TO_TEEN){
+    state.stage = 'teen'; beep(900,0.1); showToast('Grew into a teen!');
+  } else if (state.stage === 'teen' && age >= TEEN_TO_ADULT){
+    state.stage = 'adult';
+    state.evolutionForm = state.mistakes <= 3 ? 'good' : 'bad';
+    beep(1400,0.15); beep(1800,0.2);
+    showToast('Evolved into an adult!');
+  }
+}
+
+function applyDecay(deltaMs){
+  if (!state.alive) return;
+  var dMin = deltaMs / MIN;
+
+  if (state.stage === 'egg'){
+    if (Date.now() - state.born >= EGG_HATCH_MS) hatch();
+    return;
+  }
+
+  checkEvolution();
+  if (!state.alive) return;
+
+  if (!state.asleep){
+    state.hunger    = clamp(state.hunger    - HUNGER_RATE * dMin);
+    state.happiness = clamp(state.happiness - HAPPY_RATE  * dMin);
+    state.energy    = clamp(state.energy    - ENERGY_AWAKE * dMin);
+  } else {
+    state.energy = clamp(state.energy + ENERGY_SLEEP * dMin);
+    state.hunger = clamp(state.hunger - HUNGER_RATE * 0.4 * dMin);
+  }
+
+  if (Math.random() < POOP_CHANCE_PER_MIN * dMin) state.poop = Math.min(state.poop + 1, 8);
+
+  if (!state.sick){
+    var risk = 0;
+    if (state.poop >= 4) risk += 0.02;
+    if (state.hunger <= 10) risk += 0.02;
+    if (state.happiness <= 10) risk += 0.02;
+    if (risk > 0 && Math.random() < risk * dMin) state.sick = true;
+  }
+
+  var healthDelta = 0;
+  if (state.hunger <= 0){ healthDelta -= 3*dMin; markMistake('starve'); } else clearFlag('starve');
+  if (state.happiness <= 0){ healthDelta -= 2*dMin; markMistake('sad'); } else clearFlag('sad');
+  if (state.poop >= 5){ healthDelta -= 2*dMin; markMistake('dirty'); } else clearFlag('dirty');
+  if (state.sick) healthDelta -= 4*dMin;
+  if (healthDelta === 0 && state.hunger > 50 && state.happiness > 50 && state.poop < 3){
+    healthDelta += 1*dMin;
+  }
+  state.health = clamp(state.health + healthDelta);
+  if (state.health <= 0) die('neglect');
+}
+
+/* ---------- Actions ---------- */
+function requireAliveAwakeGrown(){
+  return state.alive && state.stage !== 'egg';
+}
+
+function doFeed(isSnack){
+  if (!requireAliveAwakeGrown()) return;
+  if (state.asleep){ showToast("It's asleep..."); return; }
+  if (isSnack){
+    state.hunger = clamp(state.hunger + 15);
+    state.happiness = clamp(state.happiness + 5);
+    state.weight += 1;
+    showToast('Snack time!');
+  } else {
+    state.hunger = clamp(state.hunger + 35);
+    state.weight += 3;
+    showToast('Yum!');
+  }
+  beep(700,0.08);
+}
+
+function doPlay(){
+  if (!requireAliveAwakeGrown()) return;
+  if (state.asleep){ showToast("It's asleep..."); return; }
+  if (state.energy < 10){ showToast('Too tired to play'); return; }
+  state.happiness = clamp(state.happiness + 20);
+  state.energy = clamp(state.energy - 12);
+  state.weight = Math.max(10, state.weight - 2);
+  showToast('Having fun!');
+  beep(1000,0.06); beep(1200,0.06);
+}
+
+function doClean(){
+  if (!requireAliveAwakeGrown()) return;
+  if (state.poop === 0){ showToast('Already clean'); return; }
+  var wasVeryDirty = state.poop >= 5;
+  state.poop = 0;
+  if (wasVeryDirty) state.health = clamp(state.health + 3);
+  showToast('Cleaned up!');
+  beep(500,0.08);
+}
+
+function doMedicine(){
+  if (!requireAliveAwakeGrown()) return;
+  if (state.sick){
+    state.sick = false;
+    state.health = clamp(state.health + 10);
+    showToast('Feeling better!');
+    beep(1500,0.15);
+  } else {
+    state.happiness = clamp(state.happiness - 5);
+    showToast('Yuck, not needed');
+    beep(300,0.1);
+  }
+}
+
+function doSleep(){
+  if (!requireAliveAwakeGrown()) return;
+  state.asleep = !state.asleep;
+  showToast(state.asleep ? 'Good night...' : 'Good morning!');
+  beep(state.asleep ? 400 : 800, 0.1);
+}
+
+function doDiscipline(){
+  if (!requireAliveAwakeGrown()) return;
+  state.happiness = clamp(state.happiness - 3);
+  state.energy = clamp(state.energy + 5);
+  showToast('Scolded');
+  beep(350,0.08);
+}
+
+function activateSelected(isLong){
+  if (!state || !state.alive) return;
+  var id = ICONS[selected].id;
+  if (id === 'feed') doFeed(!!isLong);
+  else if (id === 'play') doPlay();
+  else if (id === 'clean') doClean();
+  else if (id === 'med') doMedicine();
+  else if (id === 'sleep') doSleep();
+  else if (id === 'discipline') doDiscipline();
+  render();
+}
+
+function resetGame(){
+  state = freshState();
+  render();
+}
+
+/* ---------- Sound ---------- */
+function beep(freq, dur){
+  if (!state || !state.soundOn) return;
+  try{
+    beep.ctx = beep.ctx || new (window.AudioContext || window.webkitAudioContext)();
+    var ctx = beep.ctx;
+    var o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = freq || 800; o.type = 'square';
+    g.gain.value = 0.05;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + (dur || 0.08));
+  }catch(e){}
+}
+
+/* ---------- Toast ---------- */
+var toastEl = document.getElementById('toast');
+var toastTimer = null;
+function showToast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 1600);
+}
+
+/* ---------- Rendering ---------- */
+var canvas = document.getElementById('stage-canvas');
+var ctx = canvas.getContext('2d');
+var W = canvas.width, H = canvas.height;
+var hud = document.getElementById('hud');
+var overlay = document.getElementById('overlay');
+var menuEl = document.getElementById('menu');
+
+function buildMenu(){
+  menuEl.innerHTML = '';
+  ICONS.forEach(function(icon, i){
+    var b = document.createElement('div');
+    b.className = 'icon-btn' + (i === selected ? ' selected' : '');
+    b.textContent = icon.label;
+    b.addEventListener('click', function(){
+      selected = i;
+      activateSelected(false);
+    });
+    menuEl.appendChild(b);
+  });
+}
+
+function moveSelection(dir){
+  if (!state) return;
+  selected = (selected + dir + ICONS.length) % ICONS.length;
+  render();
+}
+
+function setBar(cls, val){
+  document.querySelector('.b-' + cls + ' > i').style.width = clamp(val) + '%';
+}
+
+function drawPoop(x, y){
+  ctx.fillStyle = '#6b4423';
+  ctx.beginPath();
+  ctx.ellipse(x, y, 5, 4, 0, 0, Math.PI*2);
+  ctx.fill();
+}
+
+function drawTombstone(){
+  ctx.fillStyle = '#888';
+  ctx.fillRect(W/2-20, H/2-10, 40, 40);
+  ctx.beginPath();
+  ctx.arc(W/2, H/2-10, 20, Math.PI, 0);
+  ctx.fill();
+  ctx.fillStyle = '#333';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('RIP', W/2, H/2+15);
+}
+
+function stageSize(stage){
+  return { egg:18, baby:22, child:30, teen:38, adult:44 }[stage] || 24;
+}
+
+function drawPet(){
+  var hour = new Date().getHours();
+  var isNight = hour < 7 || hour >= 21;
+  var dark = isNight || state.asleep;
+
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = dark ? '#0a0e27' : '#cfe8ff';
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = dark ? '#141a3d' : '#a9d4a0';
+  ctx.fillRect(0,H-18,W,18);
+
+  for (var i=0; i<Math.min(state.poop,6); i++){
+    drawPoop(18 + i*36, H-10);
+  }
+
+  if (!state.alive){ drawTombstone(); return; }
+
+  var cx = W/2, cy = H/2 - 5;
+
+  if (state.stage === 'egg'){
+    ctx.fillStyle = '#f5ecd7';
+    ctx.strokeStyle = '#c9b98a';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 22, 28, 0, 0, Math.PI*2);
+    ctx.fill(); ctx.stroke();
+    var progress = (Date.now() - state.born) / EGG_HATCH_MS;
+    if (progress > 0.5){
+      ctx.strokeStyle = '#8a7a52';
+      ctx.beginPath();
+      ctx.moveTo(cx-10, cy-15); ctx.lineTo(cx, cy); ctx.lineTo(cx-4, cy+12);
+      ctx.stroke();
+    }
+    return;
+  }
+
+  var size = stageSize(state.stage);
+  var goodForm = state.evolutionForm !== 'bad';
+  var hue = state.stage === 'adult' ? (goodForm ? '#5ec96a' : '#7a5ec9')
+                                     : (state.sick ? '#9fcf7a' : '#f2c94c');
+
+  ctx.fillStyle = hue;
+  ctx.beginPath();
+  if (state.stage === 'adult' && !goodForm){
+    // spiky grumpy form
+    var spikes = 8, outer = size, inner = size*0.65;
+    ctx.moveTo(cx + outer, cy);
+    for (var s=1; s<=spikes*2; s++){
+      var r = (s % 2 === 0) ? outer : inner;
+      var ang = Math.PI * s / spikes;
+      ctx.lineTo(cx + r*Math.cos(ang), cy + r*Math.sin(ang));
+    }
+    ctx.closePath();
+  } else {
+    ctx.ellipse(cx, cy, size, size*0.9, 0, 0, Math.PI*2);
+  }
+  ctx.fill();
+
+  // limbs for child/teen/adult
+  if (state.stage !== 'baby'){
+    ctx.fillStyle = hue;
+    ctx.beginPath(); ctx.ellipse(cx-size*0.9, cy+size*0.6, 5, 8, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx+size*0.9, cy+size*0.6, 5, 8, 0, 0, Math.PI*2); ctx.fill();
+  }
+
+  // eyes
+  var eyeY = cy - size*0.15, eyeDX = size*0.35;
+  ctx.fillStyle = '#222';
+  if (state.asleep){
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx-eyeDX-4, eyeY); ctx.lineTo(cx-eyeDX+4, eyeY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+eyeDX-4, eyeY); ctx.lineTo(cx+eyeDX+4, eyeY); ctx.stroke();
+    ctx.font = '10px monospace'; ctx.fillText('Z z z', cx+size*0.6, cy-size*0.8);
+  } else if (state.sick){
+    ctx.font = (size*0.5)+'px monospace';
+    ctx.fillText('@', cx-eyeDX-4, eyeY+4);
+    ctx.fillText('@', cx+eyeDX-4, eyeY+4);
+  } else {
+    ctx.beginPath(); ctx.arc(cx-eyeDX, eyeY, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+eyeDX, eyeY, 3, 0, Math.PI*2); ctx.fill();
+  }
+
+  // mouth: smile if doing well, frown if not
+  var mood = (state.hunger + state.happiness + state.energy) / 3;
+  ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (!state.asleep){
+    if (mood > 50) ctx.arc(cx, cy+size*0.25, size*0.3, 0.15*Math.PI, 0.85*Math.PI);
+    else ctx.arc(cx, cy+size*0.45, size*0.3, 1.15*Math.PI, 1.85*Math.PI);
+    ctx.stroke();
+  }
+}
+
+function render(){
+  buildMenu();
+  drawPet();
+  setBar('hunger', state.hunger);
+  setBar('happy', state.happiness);
+  setBar('energy', state.energy);
+  setBar('health', state.health);
+
+  var ageText = '';
+  if (state.hatchedAt){
+    var days = Math.floor((Date.now()-state.hatchedAt)/DAY);
+    ageText = 'Day ' + days + ' · ' + state.stage;
+  } else {
+    ageText = 'egg';
+  }
+  hud.textContent = ageText + (state.sick ? ' · sick' : '');
+
+  if (!state.alive){
+    overlay.innerHTML = '';
+    var t = document.createElement('div'); t.textContent = 'It passed away.';
+    var t2 = document.createElement('div'); t2.style.fontSize='9px'; t2.style.color='#999';
+    t2.textContent = 'Cause: ' + (state.deathReason || 'unknown');
+    var btn = document.createElement('button'); btn.textContent = 'New Egg';
+    btn.addEventListener('click', resetGame);
+    overlay.appendChild(t); overlay.appendChild(t2); overlay.appendChild(btn);
+    overlay.classList.add('show');
+  } else {
+    overlay.classList.remove('show');
+  }
+
+  if (state.firstRun){
+    state.firstRun = false;
+    showToast('Scroll to choose, press to use');
+  }
+}
+
+/* ---------- Main loop ---------- */
+function tick(){
+  applyDecay(1000);
+  render();
+}
+
+function persist(){
+  Storage.set(STORE_KEY, state);
+}
+
+function init(){
+  Storage.get(STORE_KEY).then(function(saved){
+    if (saved){
+      state = saved;
+      var elapsed = Date.now() - (state.lastTick || Date.now());
+      if (elapsed > 0) applyDecay(elapsed);
+      state.lastTick = Date.now();
+    } else {
+      state = freshState();
+    }
+    render();
+    setInterval(tick, 1000);
+    setInterval(persist, 5000);
+    window.addEventListener('beforeunload', persist);
+  }).catch(function(){
+    state = freshState();
+    render();
+    setInterval(tick, 1000);
+    setInterval(persist, 5000);
+    window.addEventListener('beforeunload', persist);
+  });
+}
+
+/* ---------- Input: R1 hardware events ---------- */
+window.addEventListener('scrollUp',   function(){ moveSelection(-1); });
+window.addEventListener('scrollDown', function(){ moveSelection(1); });
+window.addEventListener('sideClick',  function(){ activateSelected(false); });
+window.addEventListener('longPressStart', function(){ longPressActive = true; });
+window.addEventListener('longPressEnd',   function(){
+  if (longPressActive){ activateSelected(true); longPressActive = false; }
+});
+
+/* ---------- Input: desktop/browser fallback for testing ---------- */
+document.addEventListener('keydown', function(e){
+  if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') moveSelection(-1);
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') moveSelection(1);
+  else if (e.key === 'Enter' || e.key === ' ') activateSelected(false);
+});
+
+/* petting: tap the pet itself for a tiny happiness nudge */
+var lastPet = 0;
+canvas.addEventListener('click', function(){
+  if (!state || !state.alive || state.stage === 'egg') return;
+  var now = Date.now();
+  if (now - lastPet < 4000) return;
+  lastPet = now;
+  state.happiness = clamp(state.happiness + 3);
+  beep(1300,0.05);
+  render();
+});
+
+init();
+})();
+</script>
+</body>
+</html>
