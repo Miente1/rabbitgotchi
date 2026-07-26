@@ -80,33 +80,40 @@ var ICONS = [
 
 var STORE_KEY = 'rabbitgotchi_state_v1';
 
-/* ---------- Storage (real device storage, falls back to localStorage for desktop testing) ---------- */
+/* ---------- Storage ----------
+   Writes to BOTH window.creationStorage.plain (the real R1 API) and
+   localStorage on every save, and reads back whichever one actually has
+   data. This is deliberately redundant: if the device storage API silently
+   fails (e.g. an unhandled promise rejection), the localStorage copy still
+   saves the game instead of losing it. */
 var Storage = {
   get: function(key){
     return new Promise(function(resolve){
+      var local = fallbackGet(key);
       try {
         if (window.creationStorage && window.creationStorage.plain && window.creationStorage.plain.getItem) {
           Promise.resolve(window.creationStorage.plain.getItem(key)).then(function(raw){
-            if (!raw) return resolve(null);
+            if (!raw) return resolve(local);
             try { resolve(JSON.parse(decodeURIComponent(escape(atob(raw))))); }
-            catch(e){ resolve(null); }
-          }).catch(function(){ resolve(fallbackGet(key)); });
+            catch(e){ resolve(local); }
+          }).catch(function(){ resolve(local); });
         } else {
-          resolve(fallbackGet(key));
+          resolve(local);
         }
       } catch(e){
-        resolve(fallbackGet(key));
+        resolve(local);
       }
     });
   },
   set: function(key, value){
     var json = JSON.stringify(value);
+    try { localStorage.setItem(key, json); } catch(e){}
     if (window.creationStorage && window.creationStorage.plain && window.creationStorage.plain.setItem) {
       try {
-        return Promise.resolve(window.creationStorage.plain.setItem(key, btoa(unescape(encodeURIComponent(json)))));
-      } catch(e){ /* fall through */ }
+        Promise.resolve(window.creationStorage.plain.setItem(key, btoa(unescape(encodeURIComponent(json)))))
+          .catch(function(){ /* localStorage copy above already covers this */ });
+      } catch(e){ /* localStorage copy above already covers this */ }
     }
-    try { localStorage.setItem(key, json); } catch(e){}
     return Promise.resolve();
   }
 };
@@ -290,11 +297,13 @@ function activateSelected(isLong){
   else if (id === 'sleep') doSleep();
   else if (id === 'discipline') doDiscipline();
   render();
+  persist();
 }
 
 function resetGame(){
   state = freshState();
   render();
+  persist();
 }
 
 /* ---------- Sound ---------- */
@@ -508,10 +517,20 @@ function render(){
 function tick(){
   applyDecay(1000);
   render();
+  persist();
 }
 
 function persist(){
+  state.lastTick = Date.now();
   Storage.set(STORE_KEY, state);
+}
+
+function startLoops(){
+  setInterval(tick, 1000);
+  window.addEventListener('beforeunload', persist);
+  document.addEventListener('visibilitychange', function(){
+    if (document.hidden) persist();
+  });
 }
 
 function init(){
@@ -520,20 +539,15 @@ function init(){
       state = saved;
       var elapsed = Date.now() - (state.lastTick || Date.now());
       if (elapsed > 0) applyDecay(elapsed);
-      state.lastTick = Date.now();
     } else {
       state = freshState();
     }
     render();
-    setInterval(tick, 1000);
-    setInterval(persist, 5000);
-    window.addEventListener('beforeunload', persist);
+    startLoops();
   }).catch(function(){
     state = freshState();
     render();
-    setInterval(tick, 1000);
-    setInterval(persist, 5000);
-    window.addEventListener('beforeunload', persist);
+    startLoops();
   });
 }
 
