@@ -29,14 +29,15 @@ Uses `window.creationStorage.plain` (the real R1 Creations persistence API) when
 
 Just open `index.html` directly in a browser, or serve the folder with any static server. The window is fixed at 240×282 to match the R1 screen.
 
-## Deploying to your R1
+## Deployed
 
-R1 Creations aren't uploaded to Rabbit directly — you host the static file yourself and register it as a Creation:
+- Live at: **https://miente1.github.io/rabbitgotchi/** (GitHub Pages, repo `Miente1/rabbitgotchi`, served from `main` branch root)
+- Install QR code: `install-qr.png` in this folder — scan it from the R1's Creations card to install.
 
-1. Host this folder somewhere static — GitHub Pages or Netlify both work and are what most of the R1 community uses (drag-and-drop the folder onto Netlify, or push to a `gh-pages` branch on GitHub).
-2. Note the public URL to `index.html`.
-3. Generate an install QR code for that URL using the `qr` tool in Rabbit's official SDK repo: https://github.com/rabbit-hmi-oss/creations-sdk
-4. On the R1, open the Creations card and scan the QR code (or find it via the public gallery at rabbit.tech/creations if you choose to publish it there).
+To redeploy after editing `index.html`, just commit and push — Pages rebuilds automatically:
+```
+git add index.html && git commit -m "update" && git push
+```
 
 ## Notes / limitations
 
