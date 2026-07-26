@@ -32,6 +32,7 @@
   #overlay button{font-family:inherit;font-size:11px;padding:6px 14px;background:#4de861;border:none;color:#000;}
 
   #hud{position:absolute;top:26px;left:3px;font-size:8px;color:#333;text-shadow:0 1px 0 rgba(255,255,255,.3);}
+  #diag{position:absolute;top:228px;right:3px;font-size:7px;color:rgba(255,255,255,.55);}
 </style>
 </head>
 <body>
@@ -45,6 +46,7 @@
 
   <canvas id="stage-canvas" width="240" height="210"></canvas>
   <div id="hud"></div>
+  <div id="diag"></div>
 
   <div id="menu"></div>
 
@@ -57,6 +59,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
+var BUILD_ID = 'b3'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -85,7 +88,13 @@ var STORE_KEY = 'rabbitgotchi_state_v1';
    localStorage on every save, and reads back whichever one actually has
    data. This is deliberately redundant: if the device storage API silently
    fails (e.g. an unhandled promise rejection), the localStorage copy still
-   saves the game instead of losing it. */
+   saves the game instead of losing it.
+   get() resolves {value, source} where source is 'device'|'local'|'none'
+   so the caller can show/log exactly what happened — there is no console
+   access on-device, so this is the only way to diagnose storage failures
+   there. */
+var Diag = { hasDeviceStorage: !!(window.creationStorage && window.creationStorage.plain), lastSaveOk: null };
+
 var Storage = {
   get: function(key){
     return new Promise(function(resolve){
@@ -93,21 +102,23 @@ var Storage = {
       try {
         if (window.creationStorage && window.creationStorage.plain && window.creationStorage.plain.getItem) {
           Promise.resolve(window.creationStorage.plain.getItem(key)).then(function(raw){
-            if (!raw) return resolve(local);
-            try { resolve(JSON.parse(decodeURIComponent(escape(atob(raw))))); }
-            catch(e){ resolve(local); }
-          }).catch(function(){ resolve(local); });
+            if (!raw) return resolve({value: local, source: local ? 'local' : 'none'});
+            try { resolve({value: JSON.parse(decodeURIComponent(escape(atob(raw)))), source: 'device'}); }
+            catch(e){ resolve({value: local, source: local ? 'local' : 'none'}); }
+          }).catch(function(){ resolve({value: local, source: local ? 'local' : 'none'}); });
         } else {
-          resolve(local);
+          resolve({value: local, source: local ? 'local' : 'none'});
         }
       } catch(e){
-        resolve(local);
+        resolve({value: local, source: local ? 'local' : 'none'});
       }
     });
   },
   set: function(key, value){
     var json = JSON.stringify(value);
-    try { localStorage.setItem(key, json); } catch(e){}
+    var localOk = false;
+    try { localStorage.setItem(key, json); localOk = true; } catch(e){}
+    Diag.lastSaveOk = localOk;
     if (window.creationStorage && window.creationStorage.plain && window.creationStorage.plain.setItem) {
       try {
         Promise.resolve(window.creationStorage.plain.setItem(key, btoa(unescape(encodeURIComponent(json)))))
@@ -523,6 +534,7 @@ function tick(){
 function persist(){
   state.lastTick = Date.now();
   Storage.set(STORE_KEY, state);
+  updateDiagHud();
 }
 
 function startLoops(){
@@ -534,9 +546,9 @@ function startLoops(){
 }
 
 function init(){
-  Storage.get(STORE_KEY).then(function(saved){
-    if (saved){
-      state = saved;
+  Storage.get(STORE_KEY).then(function(result){
+    if (result.value){
+      state = result.value;
       var elapsed = Date.now() - (state.lastTick || Date.now());
       if (elapsed > 0) applyDecay(elapsed);
     } else {
@@ -544,11 +556,24 @@ function init(){
     }
     render();
     startLoops();
+    if (result.source === 'device') showToast('Save found (device storage)');
+    else if (result.source === 'local') showToast('Save found (local backup)');
+    else showToast('No save found - new egg');
+    updateDiagHud();
   }).catch(function(){
     state = freshState();
     render();
     startLoops();
+    showToast('Storage error - new egg');
+    updateDiagHud();
   });
+}
+
+function updateDiagHud(){
+  var el = document.getElementById('diag');
+  if (!el) return;
+  el.textContent = BUILD_ID + ' · CS:' + (Diag.hasDeviceStorage ? 'y' : 'n') +
+    ' · save:' + (Diag.lastSaveOk === null ? '?' : (Diag.lastSaveOk ? 'ok' : 'FAIL'));
 }
 
 /* ---------- Input: R1 hardware events ---------- */
