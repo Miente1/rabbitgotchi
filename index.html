@@ -62,7 +62,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b8'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b9'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -442,20 +442,61 @@ function drawPoop(x, y){
   ctx.fill();
 }
 
-function drawTombstone(){
+function drawTombstone(groundY){
+  var rectH = 40, rectTop = groundY + 5 - rectH;
   ctx.fillStyle = '#888';
-  ctx.fillRect(W/2-20, H/2-10, 40, 40);
+  ctx.fillRect(W/2-20, rectTop, 40, rectH);
   ctx.beginPath();
-  ctx.arc(W/2, H/2-10, 20, Math.PI, 0);
+  ctx.arc(W/2, rectTop, 20, Math.PI, 0);
   ctx.fill();
   ctx.fillStyle = '#333';
   ctx.font = '10px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('RIP', W/2, H/2+15);
+  ctx.fillText('RIP', W/2, rectTop+26);
 }
 
 function stageSize(stage){
   return { egg:18, baby:22, child:30, teen:38, adult:44 }[stage] || 24;
+}
+
+var STARS = [[20,14],[55,8],[95,20],[140,10],[178,24],[205,7],[36,30],[165,32],[8,40]];
+var FLOOR_H = 46;
+
+function drawCloud(x, y){
+  ctx.beginPath();
+  ctx.ellipse(x, y, 13, 8, 0, 0, Math.PI*2);
+  ctx.ellipse(x+13, y-3, 10, 7, 0, 0, Math.PI*2);
+  ctx.ellipse(x-12, y+2, 9, 6, 0, 0, Math.PI*2);
+  ctx.fill();
+}
+
+function drawBackground(dark){
+  ctx.fillStyle = dark ? '#0a0e27' : '#cfe8ff';
+  ctx.fillRect(0,0,W,H);
+
+  if (dark){
+    ctx.fillStyle = 'rgba(255,255,255,.75)';
+    for (var i=0; i<STARS.length; i++) ctx.fillRect(STARS[i][0], STARS[i][1], 2, 2);
+    ctx.fillStyle = '#eef0e0';
+    ctx.beginPath(); ctx.arc(W-32, 30, 13, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#0a0e27';
+    ctx.beginPath(); ctx.arc(W-26, 25, 11, 0, Math.PI*2); ctx.fill();
+  } else {
+    ctx.fillStyle = '#ffd75e';
+    ctx.beginPath(); ctx.arc(W-32, 30, 14, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    var drift = (performance.now()/1000 * 6) % (W+60);
+    drawCloud(drift-30, 34);
+    drawCloud(((drift+130) % (W+60))-30, 54);
+  }
+
+  var groundY = H - FLOOR_H;
+  ctx.fillStyle = dark ? '#141a3d' : '#8fcf7f';
+  ctx.fillRect(0, groundY, W, FLOOR_H);
+  ctx.fillStyle = dark ? '#0d1128' : '#6fae5f';
+  ctx.fillRect(0, groundY+13, W, FLOOR_H-13);
+
+  return groundY;
 }
 
 function drawPet(){
@@ -464,18 +505,17 @@ function drawPet(){
   var dark = isNight || state.asleep;
 
   ctx.clearRect(0,0,W,H);
-  ctx.fillStyle = dark ? '#0a0e27' : '#cfe8ff';
-  ctx.fillRect(0,0,W,H);
-  ctx.fillStyle = dark ? '#141a3d' : '#a9d4a0';
-  ctx.fillRect(0,H-18,W,18);
+  var groundY = drawBackground(dark);
 
   for (var i=0; i<Math.min(state.poop,6); i++){
-    drawPoop(18 + i*36, H-10);
+    drawPoop(18 + i*36, groundY + 36);
   }
 
-  if (!state.alive){ drawTombstone(); return; }
+  if (!state.alive){ drawTombstone(groundY); return; }
 
-  var cx = W/2, cy = H/2 - 5;
+  var cx = W/2;
+  var groundHalf = state.stage === 'egg' ? 28 : stageSize(state.stage) * 0.9;
+  var cy = groundY + 5 - groundHalf;
 
   if (state.alive && state.stage !== 'egg' && !state.asleep){
     var idleT = (performance.now() % IDLE_BOB_PERIOD) / IDLE_BOB_PERIOD;
