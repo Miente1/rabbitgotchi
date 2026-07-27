@@ -62,7 +62,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b10'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b11'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -453,6 +453,28 @@ function drawPoop(x, y){
   ctx.fill();
 }
 
+// Snore-puff Zzz: 3 letters loop continuously, each drifting up and to the
+// side while growing and fading, staggered like a breathing/snoring rhythm.
+function drawZzz(x, y){
+  var now = performance.now();
+  var prevAlign = ctx.textAlign;
+  ctx.textAlign = 'left';
+  ctx.lineWidth = 2;
+  for (var i=0; i<3; i++){
+    var phase = ((now/1500 + i/3) % 1);
+    var fontSize = 9 + i*3 + phase*6;
+    var lx = x + i*8 + phase*6;
+    var ly = y - phase*20;
+    var alpha = phase < 0.15 ? phase/0.15 : (phase > 0.75 ? (1-phase)/0.25 : 1);
+    ctx.font = 'bold ' + fontSize.toFixed(1) + 'px monospace';
+    ctx.strokeStyle = 'rgba(10,14,39,' + (alpha*0.9).toFixed(2) + ')';
+    ctx.fillStyle = 'rgba(255,255,255,' + alpha.toFixed(2) + ')';
+    ctx.strokeText('Z', lx, ly);
+    ctx.fillText('Z', lx, ly);
+  }
+  ctx.textAlign = prevAlign;
+}
+
 function drawTombstone(groundY){
   var rectH = 40, rectTop = groundY + 5 - rectH;
   ctx.fillStyle = '#888';
@@ -593,7 +615,7 @@ function drawPet(){
     ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(cx-eyeDX-4, eyeY); ctx.lineTo(cx-eyeDX+4, eyeY); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(cx+eyeDX-4, eyeY); ctx.lineTo(cx+eyeDX+4, eyeY); ctx.stroke();
-    ctx.font = '10px monospace'; ctx.fillText('Z z z', cx+size*0.6, cy-size*0.8);
+    drawZzz(cx+size*0.5, cy-size*0.7);
   } else if (state.sick){
     ctx.font = (size*0.5)+'px monospace';
     ctx.fillText('@', cx-eyeDX-4, eyeY+4);
