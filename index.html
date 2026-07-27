@@ -59,7 +59,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b3'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b4'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -71,6 +71,18 @@ var HAPPY_RATE    = 100/(8*60);   // empty in 8h
 var ENERGY_AWAKE  = 100/(10*60);  // empty in 10h awake
 var ENERGY_SLEEP  = 100/(4*60);   // full recharge in 4h sleep
 var POOP_CHANCE_PER_MIN = 1/180;  // ~1 poop every 3h on average
+
+var ATTITUDE_MIN_MS = 25*1000, ATTITUDE_MAX_MS = 40*1000;
+var ATTITUDE_LINES = {
+  egg:    ['*wiggle*', '...', 'something\'s moving in there', '*tap tap*', 'hello? anyone there?'],
+  sick:   ['I don\'t feel so good...', '*cough*', 'everything\'s spinny...', 'ugh...'],
+  hungry: ['my tummy is rumbling...', 'got any snacks?', '*stomach growls*', 'feed me?'],
+  dirty:  ['it\'s a bit messy in here...', 'ahem, could you clean up?', '*sniffs* something smells...'],
+  bored:  ['I\'m bored...', 'nobody\'s paying attention to me', '*sigh*', 'play with me?', 'entertain me!'],
+  sassy:  ['hmph.', 'whatever.', 'oh, it\'s you.', '*rolls eyes*', 'what do YOU want'],
+  sweet:  ['*nuzzles*', 'you\'re the best!', 'yay, you\'re here!', '<3'],
+  happy:  ['!', 'la la la~', '*happy wiggle*', 'life is good!', '*hums a little tune*', 'wheee!']
+};
 
 var ICONS = [
   {id:'feed',       label:'🍔', name:'Feed'},
@@ -348,6 +360,17 @@ var W = canvas.width, H = canvas.height;
 var hud = document.getElementById('hud');
 var overlay = document.getElementById('overlay');
 var menuEl = document.getElementById('menu');
+var anim = null;
+
+function startAnim(type){
+  anim = { type: type, start: performance.now(), duration: 700 };
+  function step(now){
+    if (!anim || now - anim.start > anim.duration){ anim = null; drawPet(); return; }
+    drawPet();
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
 
 function buildMenu(){
   menuEl.innerHTML = '';
@@ -414,6 +437,12 @@ function drawPet(){
   if (!state.alive){ drawTombstone(); return; }
 
   var cx = W/2, cy = H/2 - 5;
+  if (anim){
+    var t = Math.min(1, (performance.now() - anim.start) / anim.duration);
+    if (anim.type === 'bounce') cy -= Math.sin(t*Math.PI) * 9;
+    else if (anim.type === 'shake') cx += Math.sin(t*Math.PI*10) * 4 * (1-t);
+    else if (anim.type === 'droop') cy += Math.sin(t*Math.PI) * 4;
+  }
 
   if (state.stage === 'egg'){
     ctx.fillStyle = '#f5ecd7';
@@ -524,6 +553,34 @@ function render(){
   }
 }
 
+/* ---------- Attitude: idle personality moments ---------- */
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+function triggerAttitude(){
+  scheduleAttitude();
+  if (!state || !state.alive || document.hidden) return;
+
+  var pool, animType;
+  if (state.stage === 'egg'){ pool = ATTITUDE_LINES.egg; animType = 'shake'; }
+  else if (state.asleep){ return; }
+  else if (state.sick){ pool = ATTITUDE_LINES.sick; animType = 'shake'; }
+  else if (state.hunger <= 25){ pool = ATTITUDE_LINES.hungry; animType = 'shake'; }
+  else if (state.poop >= 4){ pool = ATTITUDE_LINES.dirty; animType = 'shake'; }
+  else if (state.happiness <= 30){ pool = ATTITUDE_LINES.bored; animType = 'droop'; }
+  else if (state.stage === 'adult' && state.evolutionForm === 'bad'){ pool = ATTITUDE_LINES.sassy; animType = 'bounce'; }
+  else if (state.stage === 'adult'){ pool = ATTITUDE_LINES.sweet; animType = 'bounce'; }
+  else { pool = ATTITUDE_LINES.happy; animType = 'bounce'; }
+
+  showToast(pick(pool));
+  startAnim(animType);
+  beep(animType === 'bounce' ? 1100 : (animType === 'shake' ? 500 : 700), 0.06);
+}
+
+function scheduleAttitude(){
+  var delay = ATTITUDE_MIN_MS + Math.random() * (ATTITUDE_MAX_MS - ATTITUDE_MIN_MS);
+  setTimeout(triggerAttitude, delay);
+}
+
 /* ---------- Main loop ---------- */
 function tick(){
   applyDecay(1000);
@@ -539,6 +596,7 @@ function persist(){
 
 function startLoops(){
   setInterval(tick, 1000);
+  scheduleAttitude();
   window.addEventListener('beforeunload', persist);
   document.addEventListener('visibilitychange', function(){
     if (document.hidden) persist();
