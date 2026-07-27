@@ -62,7 +62,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b7'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b8'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -387,15 +387,28 @@ var hud = document.getElementById('hud');
 var overlay = document.getElementById('overlay');
 var menuEl = document.getElementById('menu');
 var anim = null;
+var IDLE_BOB_PERIOD = 1600; // ms, gentle continuous breathing bob
 
-function startAnim(type){
-  anim = { type: type, start: performance.now(), duration: 700 };
-  function step(now){
-    if (!anim || now - anim.start > anim.duration){ anim = null; drawPet(); return; }
-    drawPet();
-    requestAnimationFrame(step);
-  }
-  requestAnimationFrame(step);
+function startAnim(type, duration){
+  anim = { type: type, start: performance.now(), duration: duration || 700 };
+}
+
+// Continuous redraw loop so idle bobbing/hops and mood animations are
+// smooth, independent of the 1s game-tick cadence.
+function frameLoop(now){
+  if (anim && now - anim.start > anim.duration) anim = null;
+  if (state) drawPet();
+  requestAnimationFrame(frameLoop);
+}
+
+function scheduleIdleHop(){
+  var delay = 4000 + Math.random() * 5000; // 4-9s
+  setTimeout(function(){
+    if (state && state.alive && state.stage !== 'egg' && !state.asleep && !anim){
+      startAnim('hop', 450);
+    }
+    scheduleIdleHop();
+  }, delay);
 }
 
 function buildMenu(){
@@ -463,9 +476,16 @@ function drawPet(){
   if (!state.alive){ drawTombstone(); return; }
 
   var cx = W/2, cy = H/2 - 5;
+
+  if (state.alive && state.stage !== 'egg' && !state.asleep){
+    var idleT = (performance.now() % IDLE_BOB_PERIOD) / IDLE_BOB_PERIOD;
+    cy -= Math.sin(idleT * Math.PI * 2) * 2.5;
+  }
+
   if (anim){
     var t = Math.min(1, (performance.now() - anim.start) / anim.duration);
     if (anim.type === 'bounce') cy -= Math.sin(t*Math.PI) * 9;
+    else if (anim.type === 'hop') cy -= Math.sin(t*Math.PI) * 4;
     else if (anim.type === 'shake') cx += Math.sin(t*Math.PI*10) * 4 * (1-t);
     else if (anim.type === 'droop') cy += Math.sin(t*Math.PI) * 4;
   }
@@ -545,7 +565,6 @@ function drawPet(){
 
 function render(){
   buildMenu();
-  drawPet();
   setBar('hunger', state.hunger);
   setBar('happy', state.happiness);
   setBar('energy', state.energy);
@@ -626,6 +645,8 @@ function persist(){
 function startLoops(){
   setInterval(tick, 1000);
   scheduleAttitude();
+  scheduleIdleHop();
+  requestAnimationFrame(frameLoop);
   window.addEventListener('beforeunload', persist);
   document.addEventListener('visibilitychange', function(){
     if (document.hidden) persist();
