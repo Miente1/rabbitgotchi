@@ -24,8 +24,11 @@
   .icon-btn{flex:1;display:flex;align-items:center;justify-content:center;font-size:18px;color:#ccc;background:#222;border-top:2px solid #000;box-sizing:border-box;}
   .icon-btn.selected{background:#3a3a3a;border-top:2px solid #4de861;color:#fff;}
 
-  #toast{position:absolute;left:0;right:0;bottom:52px;text-align:center;font-size:10px;color:#fff;background:rgba(0,0,0,.7);padding:4px 0;opacity:0;pointer-events:none;transition:opacity .2s;}
-  #toast.show{opacity:1;}
+  #toast{position:absolute;top:40px;left:50%;transform:translateX(-50%) scale(.85);max-width:172px;text-align:center;font-size:10px;font-weight:bold;color:#111;background:#fff;border:2px solid #111;border-radius:14px;padding:6px 10px;opacity:0;pointer-events:none;transition:opacity .15s, transform .15s;box-shadow:2px 2px 0 rgba(0,0,0,.2);}
+  #toast.show{opacity:1;transform:translateX(-50%) scale(1);}
+  #toast::before,#toast::after{content:'';position:absolute;left:50%;transform:translateX(-50%);border-style:solid;}
+  #toast::before{bottom:-10px;border-width:10px 8px 0 8px;border-color:#111 transparent transparent transparent;}
+  #toast::after{bottom:-7px;border-width:7px 6px 0 6px;border-color:#fff transparent transparent transparent;}
 
   #overlay{position:absolute;inset:0;background:rgba(0,0,0,.85);color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-size:12px;gap:10px;padding:10px;box-sizing:border-box;}
   #overlay.show{display:flex;}
@@ -59,7 +62,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b4'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b5'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
