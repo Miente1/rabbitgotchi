@@ -8,7 +8,9 @@ Single file: `index.html` (no build step, no backend, no external assets).
 
 - Egg hatches after 5 minutes.
 - Grows Baby → Child (1 day) → Teen (3 days) → Adult (5 days), all measured in real elapsed time — the clock keeps running even while the creation is closed, and catches up the stats the next time you open it (like a real Tamagotchi).
-- Needs: Hunger, Happiness, Energy, Health. Neglect them and it gets sick or dies; care well and it evolves into a "good" adult form at day 5, neglect it and it evolves "bad".
+- Needs: Hunger, Happiness, Energy, Health. Neglect them and it gets sick or dies.
+- **Lifespan**: decided once, at the day-5 adult checkpoint, from the same hidden mistake counter that decides the good/bad evolution form. Great care (≤1 mistake) → evolves "good" and lives ~21 days total. Normal care (2–4 mistakes) → evolves "good" and lives ~14 days (the real Tamagotchi's average). Neglectful-but-not-fatal care (5+ mistakes) → evolves "bad" and lives only ~7 days. Severe acute neglect (sustained 0 hunger/happiness, or heavy uncleaned poop) can still kill it outright before that, same as before.
+- Age is displayed in **years**, not days — fixed scale where 70 years = the 14-day normal lifespan (5 years per real day). A well-cared pet living the full 21 days shows ~105 at natural death; a neglected one dying at 7 days shows ~35.
 - Poop spawns randomly and must be cleaned or it hurts Health.
 - Actions: 🍔 Feed (tap = meal, hold PTT = snack), 🎮 Play, 🧹 Clean, 💊 Medicine (only helps if actually sick), 💤 Sleep toggle, ✋ Scold.
 - Death shows a tombstone with an option to start a new egg.
@@ -41,10 +43,9 @@ Just open `index.html` directly in a browser, or serve the folder with any stati
 
 **QR code format**: the R1 Creations scanner does NOT accept a bare URL — it expects the QR to encode a JSON object: `{"title", "url", "description", "iconUrl", "themeColor"}` (confirmed from the official `qr` tool in `rabbit-hmi-oss/creations-sdk`). A plain-URL QR fails with "not a valid creation" on the device. Regenerate with the same schema if the URL/icon ever changes.
 
-To redeploy after editing `index.html`, just commit and push — Pages rebuilds automatically:
-```
-git add index.html && git commit -m "update" && git push
-```
+To redeploy after editing `index.html`: commit and push (Pages rebuilds automatically), but that alone is **not enough to get it onto the device** — see below.
+
+**Updating the already-installed device copy**: confirmed on real hardware that the R1 only fetches a creation's content at install/QR-scan time — reopening from its list does NOT refetch. After every code change: bump `BUILD_ID` in `index.html`, bump the `?v=` query string in the QR payload, regenerate `install-qr.png`, push, and rescan the new QR on-device. Reusing the same URL/QR is not enough.
 
 ## Notes / limitations
 

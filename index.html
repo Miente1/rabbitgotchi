@@ -62,12 +62,20 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b5'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b6'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
 var CHILD_TO_TEEN  = 3*DAY;
 var TEEN_TO_ADULT  = 5*DAY;
+
+// Total lifespan (from hatch) is decided at the adult checkpoint based on
+// care quality so far (same mistake counter that decides evolutionForm).
+// A real Tamagotchi averages ~2 weeks; here that's the "normal care" tier.
+var LIFESPAN_GREAT     = 21*DAY;
+var LIFESPAN_NORMAL    = 14*DAY;
+var LIFESPAN_NEGLECTED = 7*DAY;
+var YEARS_PER_MS = 70 / LIFESPAN_NORMAL; // fixed scale: 70 "life years" == the 14-day normal lifespan
 
 var HUNGER_RATE   = 100/(6*60);   // per minute, empty in 6h
 var HAPPY_RATE    = 100/(8*60);   // empty in 8h
@@ -155,7 +163,7 @@ function freshState(){
     stage:'egg', born:now, hatchedAt:null,
     hunger:100, happiness:100, energy:100, health:100, weight:20,
     poop:0, mistakes:0, sick:false, asleep:false, alive:true,
-    lastTick: now, flags:{}, deathReason:null, evolutionForm:null,
+    lastTick: now, flags:{}, deathReason:null, evolutionForm:null, lifespanMs:null,
     soundOn:true, firstRun:true
   };
 }
@@ -193,10 +201,24 @@ function checkEvolution(){
     state.stage = 'teen'; beep(900,0.1); showToast('Grew into a teen!');
   } else if (state.stage === 'teen' && age >= TEEN_TO_ADULT){
     state.stage = 'adult';
-    state.evolutionForm = state.mistakes <= 3 ? 'good' : 'bad';
+    if (state.mistakes <= 1){
+      state.evolutionForm = 'good';
+      state.lifespanMs = LIFESPAN_GREAT;
+    } else if (state.mistakes <= 4){
+      state.evolutionForm = 'good';
+      state.lifespanMs = LIFESPAN_NORMAL;
+    } else {
+      state.evolutionForm = 'bad';
+      state.lifespanMs = LIFESPAN_NEGLECTED;
+    }
     beep(1400,0.15); beep(1800,0.2);
     showToast('Evolved into an adult!');
   }
+}
+
+function checkOldAge(){
+  if (!state.alive || !state.lifespanMs || !state.hatchedAt) return;
+  if (Date.now() - state.hatchedAt >= state.lifespanMs) die('old age');
 }
 
 function applyDecay(deltaMs){
@@ -209,6 +231,7 @@ function applyDecay(deltaMs){
   }
 
   checkEvolution();
+  checkOldAge();
   if (!state.alive) return;
 
   if (!state.asleep){
@@ -530,8 +553,8 @@ function render(){
 
   var ageText = '';
   if (state.hatchedAt){
-    var days = Math.floor((Date.now()-state.hatchedAt)/DAY);
-    ageText = 'Day ' + days + ' · ' + state.stage;
+    var years = (Date.now()-state.hatchedAt) * YEARS_PER_MS;
+    ageText = years.toFixed(1) + 'y · ' + state.stage;
   } else {
     ageText = 'egg';
   }
@@ -542,9 +565,12 @@ function render(){
     var t = document.createElement('div'); t.textContent = 'It passed away.';
     var t2 = document.createElement('div'); t2.style.fontSize='9px'; t2.style.color='#999';
     t2.textContent = 'Cause: ' + (state.deathReason || 'unknown');
+    var t3 = document.createElement('div'); t3.style.fontSize='9px'; t3.style.color='#999';
+    var ageAtDeath = state.hatchedAt ? ((Date.now()-state.hatchedAt)*YEARS_PER_MS).toFixed(1) : '0.0';
+    t3.textContent = 'Age: ' + ageAtDeath + ' years';
     var btn = document.createElement('button'); btn.textContent = 'New Egg';
     btn.addEventListener('click', resetGame);
-    overlay.appendChild(t); overlay.appendChild(t2); overlay.appendChild(btn);
+    overlay.appendChild(t); overlay.appendChild(t2); overlay.appendChild(t3); overlay.appendChild(btn);
     overlay.classList.add('show');
   } else {
     overlay.classList.remove('show');
