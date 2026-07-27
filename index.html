@@ -62,7 +62,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b9'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b10'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -387,10 +387,21 @@ var hud = document.getElementById('hud');
 var overlay = document.getElementById('overlay');
 var menuEl = document.getElementById('menu');
 var anim = null;
-var IDLE_BOB_PERIOD = 1600; // ms, gentle continuous breathing bob
+var IDLE_BOB_PERIOD = 1100; // ms, gentle continuous breathing bob
 
 function startAnim(type, duration){
-  anim = { type: type, start: performance.now(), duration: duration || 700 };
+  anim = { type: type, start: performance.now(), duration: duration || 550 };
+}
+
+// Snappy "hop" easing: quick eased rise to a peak, then a softer gravity-like
+// fall — reads bouncier than a plain symmetric sine wave.
+function bounceEase(t){
+  if (t < 0.4){
+    var u = t/0.4;
+    return u*u*(3-2*u); // smoothstep rise
+  }
+  var u = (t-0.4)/0.6;
+  return 1 - u*u; // eased fall
 }
 
 // Continuous redraw loop so idle bobbing/hops and mood animations are
@@ -405,7 +416,7 @@ function scheduleIdleHop(){
   var delay = 4000 + Math.random() * 5000; // 4-9s
   setTimeout(function(){
     if (state && state.alive && state.stage !== 'egg' && !state.asleep && !anim){
-      startAnim('hop', 450);
+      startAnim('hop', 380);
     }
     scheduleIdleHop();
   }, delay);
@@ -519,15 +530,15 @@ function drawPet(){
 
   if (state.alive && state.stage !== 'egg' && !state.asleep){
     var idleT = (performance.now() % IDLE_BOB_PERIOD) / IDLE_BOB_PERIOD;
-    cy -= Math.sin(idleT * Math.PI * 2) * 2.5;
+    cy -= Math.sin(idleT * Math.PI * 2) * 4;
   }
 
   if (anim){
     var t = Math.min(1, (performance.now() - anim.start) / anim.duration);
-    if (anim.type === 'bounce') cy -= Math.sin(t*Math.PI) * 9;
-    else if (anim.type === 'hop') cy -= Math.sin(t*Math.PI) * 4;
-    else if (anim.type === 'shake') cx += Math.sin(t*Math.PI*10) * 4 * (1-t);
-    else if (anim.type === 'droop') cy += Math.sin(t*Math.PI) * 4;
+    if (anim.type === 'bounce') cy -= bounceEase(t) * 13;
+    else if (anim.type === 'hop') cy -= bounceEase(t) * 7;
+    else if (anim.type === 'shake') cx += Math.sin(t*Math.PI*10) * 6 * (1-t);
+    else if (anim.type === 'droop') cy += Math.sin(t*Math.PI) * 6;
   }
 
   if (state.stage === 'egg'){
