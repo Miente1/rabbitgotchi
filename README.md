@@ -12,7 +12,8 @@ Single file: `index.html` (no build step, no backend, no external assets).
 - **Lifespan**: decided once, at the day-5 adult checkpoint, from the same hidden mistake counter that decides the good/bad evolution form. Great care (≤1 mistake) → evolves "good" and lives ~21 days total. Normal care (2–4 mistakes) → evolves "good" and lives ~14 days (the real Tamagotchi's average). Neglectful-but-not-fatal care (5+ mistakes) → evolves "bad" and lives only ~7 days. Severe acute neglect (sustained 0 hunger/happiness, or heavy uncleaned poop) can still kill it outright before that, same as before.
 - Age is displayed in **years**, not days — fixed scale where 70 years = the 14-day normal lifespan (5 years per real day). A well-cared pet living the full 21 days shows ~105 at natural death; a neglected one dying at 7 days shows ~35.
 - Poop spawns randomly and must be cleaned or it hurts Health.
-- Actions: 🍔 Feed (tap = meal, hold PTT = snack), 🎮 Play, 🧹 Clean, 💊 Medicine (only helps if actually sick), 💤 Sleep toggle, ✋ Scold.
+- Actions: 🍔 Feed (tap = meal, hold PTT = snack), 🎮 Play (Higher/Lower minigame — see below), 🧹 Clean, 💊 Medicine (only helps if actually sick), 💤 Sleep toggle, ✋ Scold.
+- **Play minigame**: shows a number 1–9; scroll to pick Higher or Lower than the next number, press to lock in the guess. Win → happiness +18. Lose → happiness −5 (a real penalty, not just "nothing happens"). Energy/weight cost is the same either way.
 - Death shows a tombstone with an option to start a new egg.
 
 ## Controls (real R1 hardware events used)
@@ -50,4 +51,3 @@ To redeploy after editing `index.html`: commit and push (Pages rebuilds automati
 ## Notes / limitations
 
 - I verified the game logic by careful manual trace (state machine, decay math, evolution thresholds, storage fallbacks) rather than a live screenshot — the sandboxed browser tool available to me refuses to load `localhost`/local servers, and I don't have physical R1 hardware to test the real `scrollUp`/`sideClick`/`creationStorage` calls against. Everything is built strictly against Rabbit's official `rabbit-hmi-oss/creations-sdk` reference (screen size, event names, storage API), but you should do a real on-device smoke test before relying on it.
-- The "Play" action is a simplified stat boost rather than the original toy's number-guessing minigame, to keep this a single evening's build rather than a whole subsystem.

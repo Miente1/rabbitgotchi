@@ -62,7 +62,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b12'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b13'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -291,11 +291,80 @@ function doPlay(){
   if (!requireAliveAwakeGrown()) return;
   if (state.asleep){ showToast("It's asleep..."); return; }
   if (state.energy < 10){ showToast('Too tired to play'); return; }
-  state.happiness = clamp(state.happiness + 20);
+  startMinigame();
+}
+
+/* ---------- Minigame: Higher or Lower ---------- */
+var minigame = null; // transient, not persisted: {number, choice, resolved}
+
+function randNum(){ return 1 + Math.floor(Math.random()*9); }
+
+function startMinigame(){
+  minigame = { number: randNum(), choice: 0, resolved: false };
+  renderMinigame();
+}
+
+function renderMinigame(){
+  if (!minigame) return;
+  overlay.innerHTML = '';
+
+  var title = document.createElement('div');
+  title.textContent = 'Higher or Lower?';
+
+  var num = document.createElement('div');
+  num.style.fontSize = '28px'; num.style.fontWeight = 'bold'; num.style.margin = '4px 0';
+  num.textContent = minigame.number;
+
+  var choices = document.createElement('div');
+  choices.style.display = 'flex'; choices.style.gap = '10px';
+  ['▲ Higher', '▼ Lower'].forEach(function(label, i){
+    var b = document.createElement('div');
+    b.textContent = label;
+    b.style.padding = '6px 10px';
+    b.style.border = '2px solid ' + (i === minigame.choice ? '#4de861' : '#555');
+    b.style.borderRadius = '8px';
+    b.style.fontSize = '11px';
+    b.addEventListener('click', function(){ minigame.choice = i; resolveMinigame(); });
+    choices.appendChild(b);
+  });
+
+  var hint = document.createElement('div');
+  hint.style.fontSize = '8px'; hint.style.color = '#999'; hint.style.marginTop = '8px';
+  hint.textContent = 'scroll to choose, press to guess';
+
+  overlay.appendChild(title); overlay.appendChild(num); overlay.appendChild(choices); overlay.appendChild(hint);
+  overlay.classList.add('show');
+}
+
+function resolveMinigame(){
+  if (!minigame || minigame.resolved) return;
+  minigame.resolved = true;
+
+  var next = randNum();
+  while (next === minigame.number) next = randNum(); // avoid ties
+  var guessedHigher = minigame.choice === 0;
+  var win = (next > minigame.number) === guessedHigher;
+
   state.energy = clamp(state.energy - 12);
   state.weight = Math.max(10, state.weight - 2);
-  showToast('Having fun!');
-  beep(1000,0.06); beep(1200,0.06);
+  if (win){
+    state.happiness = clamp(state.happiness + 18);
+    beep(1000,0.07); beep(1300,0.09);
+  } else {
+    state.happiness = clamp(state.happiness - 5);
+    beep(400,0.15);
+  }
+  persist();
+
+  overlay.innerHTML = '';
+  var result = document.createElement('div');
+  result.textContent = (win ? 'You win! ' : 'Nope! ') + minigame.number + ' → ' + next;
+  var sub = document.createElement('div');
+  sub.style.fontSize = '9px'; sub.style.color = '#999'; sub.style.marginTop = '4px';
+  sub.textContent = win ? 'Happiness up!' : 'Happiness down a bit';
+  overlay.appendChild(result); overlay.appendChild(sub);
+
+  setTimeout(function(){ minigame = null; overlay.classList.remove('show'); render(); }, 1800);
 }
 
 function doClean(){
@@ -338,6 +407,10 @@ function doDiscipline(){
 }
 
 function activateSelected(isLong){
+  if (minigame){
+    if (!minigame.resolved) resolveMinigame();
+    return;
+  }
   if (!state || !state.alive) return;
   var id = ICONS[selected].id;
   if (id === 'feed') doFeed(!!isLong);
@@ -438,6 +511,11 @@ function buildMenu(){
 }
 
 function moveSelection(dir){
+  if (minigame && !minigame.resolved){
+    minigame.choice = dir < 0 ? 0 : 1;
+    renderMinigame();
+    return;
+  }
   if (!state) return;
   selected = (selected + dir + ICONS.length) % ICONS.length;
   render();
@@ -665,7 +743,7 @@ function render(){
     btn.addEventListener('click', resetGame);
     overlay.appendChild(t); overlay.appendChild(t2); overlay.appendChild(t3); overlay.appendChild(btn);
     overlay.classList.add('show');
-  } else {
+  } else if (!minigame){
     overlay.classList.remove('show');
   }
 
