@@ -70,7 +70,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b21'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b22'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -92,6 +92,7 @@ var ENERGY_SLEEP  = 100/(4*60);   // full recharge in 4h sleep
 var POOP_CHANCE_PER_MIN = 1/180;  // ~1 poop every 3h on average
 var SICK_BASE_RISK_PER_MIN = 0.001; // ambient sickness risk even under good care — ~75-80% chance of at least one bout over the ~24h baby stage
 var NAUGHTY_MIN_GAP = 20*HOUR, NAUGHTY_MAX_GAP = 28*HOUR; // scheduled (not random-roll) so it's reliably ~once/day, not just an average
+var NAUGHTY_WINDOW_MS = 3*HOUR; // time to catch a false call via Discipline before it counts as a missed mistake
 var DISCIPLINE_MAX = 5; // fills over the ~5-day growth window at ~1 naughty episode/day
 
 var ATTITUDE_MIN_MS = 25*1000, ATTITUDE_MAX_MS = 40*1000;
@@ -100,6 +101,7 @@ var ATTITUDE_LINES = {
   sick:    ['I don\'t feel so good...', '*cough*', 'everything\'s spinny...', 'ugh...'],
   naughty: ['hmph!', 'not until you discipline me!', 'no way.', '*crosses arms*', 'make me.'],
   hungry:  ['my tummy is rumbling...', 'got any snacks?', '*stomach growls*', 'feed me?'],
+  tired:   ['I\'m so sleepy...', 'can I nap?', '*yawns*', 'zzz... huh, what?', 'so tired...'],
   dirty:   ['it\'s a bit messy in here...', 'ahem, could you clean up?', '*sniffs* something smells...'],
   bored:   ['I\'m bored...', 'nobody\'s paying attention to me', '*sigh*', 'play with me?', 'entertain me!'],
   sassy:   ['hmph.', 'whatever.', 'oh, it\'s you.', '*rolls eyes*', 'what do YOU want'],
@@ -175,7 +177,7 @@ function freshState(){
   return {
     stage:'egg', born:now, hatchedAt:null,
     hunger:100, happiness:100, energy:100, health:100, weight:20,
-    poop:0, mistakes:0, discipline:0, sick:false, naughty:false, nextNaughtyAt:null, asleep:false, alive:true,
+    poop:0, mistakes:0, discipline:0, sick:false, naughty:false, naughtyStat:null, naughtyDeadline:null, nextNaughtyAt:null, asleep:false, alive:true,
     lastTick: now, flags:{}, deathReason:null, evolutionForm:null, lifespanMs:null,
     soundOn:true, firstRun:true
   };
@@ -271,6 +273,29 @@ function applyDecay(deltaMs){
   if (!state.naughty && !state.asleep && state.nextNaughtyAt && Date.now() >= state.nextNaughtyAt){
     state.naughty = true;
     state.nextNaughtyAt = Date.now() + NAUGHTY_MIN_GAP + Math.random() * (NAUGHTY_MAX_GAP - NAUGHTY_MIN_GAP);
+
+    // Pick whichever need is most clearly fine right now and have it falsely
+    // cry about THAT, using the exact same lines a genuine call would use —
+    // the player has to actually check the bar to tell it's a lie.
+    var candidates = [
+      ['hunger', state.hunger, ATTITUDE_LINES.hungry],
+      ['happiness', state.happiness, ATTITUDE_LINES.bored],
+      ['energy', state.energy, ATTITUDE_LINES.tired]
+    ];
+    candidates.sort(function(a, b){ return b[1] - a[1]; });
+    state.naughtyStat = candidates[0][0];
+    state.naughtyDeadline = Date.now() + NAUGHTY_WINDOW_MS;
+    showToast(pick(candidates[0][2]));
+    startAnim('shake');
+    beep(500, 0.1);
+  }
+
+  if (state.naughty && state.naughtyDeadline && Date.now() > state.naughtyDeadline){
+    state.mistakes++;
+    state.naughty = false;
+    state.naughtyStat = null;
+    state.naughtyDeadline = null;
+    showToast('Missed it... 😕');
   }
 
   var healthDelta = 0;
@@ -528,7 +553,13 @@ function renderDisciplineMenu(){
 
   var status = document.createElement('div');
   status.style.fontSize = '10px'; status.style.marginTop = '2px';
-  status.textContent = state.naughty ? "It's being naughty!" : "It's behaving fine right now.";
+  if (state.naughty && state.naughtyStat){
+    var statIcon = { hunger:'🍔', happiness:'🙂', energy:'⚡' }[state.naughtyStat];
+    var statVal = Math.round(state[state.naughtyStat]);
+    status.textContent = 'Crying about ' + state.naughtyStat + '... ' + statIcon + ' bar is at ' + statVal + '%';
+  } else {
+    status.textContent = "It's behaving fine right now.";
+  }
 
   var preAdult = state.hatchedAt && state.stage !== 'adult';
   if (preAdult){
@@ -580,9 +611,11 @@ function confirmDisciplineMenu(){
 function applyDiscipline(){
   if (state.naughty){
     state.naughty = false;
+    state.naughtyStat = null;
+    state.naughtyDeadline = null;
     state.happiness = clamp(state.happiness - 3);
     state.discipline = Math.min(DISCIPLINE_MAX, state.discipline + 1);
-    showToast('Back in line! (' + state.discipline + '/' + DISCIPLINE_MAX + ')');
+    showToast('Caught you fibbing! (' + state.discipline + '/' + DISCIPLINE_MAX + ')');
     beep(500,0.1); beep(650,0.1);
   } else {
     state.happiness = clamp(state.happiness - 15);
@@ -975,6 +1008,7 @@ function triggerAttitude(){
   else if (state.sick){ pool = ATTITUDE_LINES.sick; animType = 'shake'; }
   else if (state.naughty){ pool = ATTITUDE_LINES.naughty; animType = 'shake'; }
   else if (state.hunger <= 25){ pool = ATTITUDE_LINES.hungry; animType = 'shake'; }
+  else if (state.energy <= 20){ pool = ATTITUDE_LINES.tired; animType = 'droop'; }
   else if (state.poop >= 4){ pool = ATTITUDE_LINES.dirty; animType = 'shake'; }
   else if (state.happiness <= 30){ pool = ATTITUDE_LINES.bored; animType = 'droop'; }
   else if (state.stage === 'adult' && state.evolutionForm === 'bad'){ pool = ATTITUDE_LINES.sassy; animType = 'bounce'; }
