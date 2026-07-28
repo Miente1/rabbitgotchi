@@ -18,6 +18,9 @@
   .b-energy>i{background:#4dc9e8;}
   .b-health>i{background:#4de861;}
 
+  .disc-bar{width:140px;height:10px;background:#333;border:1px solid #555;border-radius:4px;position:relative;overflow:hidden;}
+  .disc-bar>i{position:absolute;left:0;top:0;bottom:0;background:#ffd75e;display:block;transition:width .2s;}
+
   #stage-canvas{display:block;background:#cfe8ff;}
 
   #menu{height:48px;display:flex;background:#1a1a1a;}
@@ -67,7 +70,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b16'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b17'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -495,6 +498,72 @@ function doSleep(){
 
 function doDiscipline(){
   if (!requireAliveAwakeGrown()) return;
+  disciplineMenu = { choice: 0 };
+  renderDisciplineMenu();
+}
+
+/* ---------- Discipline menu: shows the fillable discipline bar + naughty status, confirm or back out ---------- */
+var disciplineMenu = null; // transient, not persisted: {choice} 0=Discipline,1=Back
+
+function renderDisciplineMenu(){
+  if (!disciplineMenu) return;
+  overlay.innerHTML = '';
+
+  var title = document.createElement('div');
+  title.textContent = 'Discipline';
+
+  var status = document.createElement('div');
+  status.style.fontSize = '10px'; status.style.marginTop = '2px';
+  status.textContent = state.naughty ? "It's being naughty!" : "It's behaving fine right now.";
+
+  var preAdult = state.hatchedAt && state.stage !== 'adult';
+  if (preAdult){
+    var label = document.createElement('div');
+    label.style.fontSize = '8px'; label.style.color = '#999'; label.style.marginTop = '6px';
+    label.textContent = 'Discipline ' + state.discipline + '/' + DISCIPLINE_MAX;
+    var barWrap = document.createElement('div');
+    barWrap.className = 'disc-bar';
+    barWrap.style.margin = '4px 0';
+    var barFill = document.createElement('i');
+    barFill.style.width = (state.discipline / DISCIPLINE_MAX * 100) + '%';
+    barWrap.appendChild(barFill);
+    overlay.appendChild(title); overlay.appendChild(status); overlay.appendChild(label); overlay.appendChild(barWrap);
+  } else {
+    overlay.appendChild(title); overlay.appendChild(status);
+  }
+
+  var choices = document.createElement('div');
+  choices.style.display = 'flex'; choices.style.gap = '10px'; choices.style.marginTop = '6px';
+  ['✋ Discipline', '↩ Back'].forEach(function(label, i){
+    var b = document.createElement('div');
+    b.textContent = label;
+    b.style.padding = '6px 10px';
+    b.style.border = '2px solid ' + (i === disciplineMenu.choice ? '#4de861' : '#555');
+    b.style.borderRadius = '8px';
+    b.style.fontSize = '11px';
+    b.addEventListener('click', function(){ disciplineMenu.choice = i; confirmDisciplineMenu(); });
+    choices.appendChild(b);
+  });
+
+  var hint = document.createElement('div');
+  hint.style.fontSize = '8px'; hint.style.color = '#999'; hint.style.marginTop = '6px';
+  hint.textContent = 'scroll to choose, press to confirm';
+
+  overlay.appendChild(choices); overlay.appendChild(hint);
+  overlay.classList.add('show');
+}
+
+function confirmDisciplineMenu(){
+  if (!disciplineMenu) return;
+  var doIt = disciplineMenu.choice === 0;
+  disciplineMenu = null;
+  overlay.classList.remove('show');
+  if (doIt) applyDiscipline();
+  render();
+  persist();
+}
+
+function applyDiscipline(){
   if (state.naughty){
     state.naughty = false;
     state.happiness = clamp(state.happiness - 3);
@@ -514,6 +583,7 @@ function activateSelected(){
     return;
   }
   if (feedChoice){ confirmFeedChoice(); return; }
+  if (disciplineMenu){ confirmDisciplineMenu(); return; }
   if (!state || !state.alive) return;
   var id = ICONS[selected].id;
   if (id === 'feed') doFeed();
@@ -622,6 +692,11 @@ function moveSelection(dir){
   if (feedChoice){
     feedChoice.choice = dir < 0 ? 0 : 1;
     renderFeedChoice();
+    return;
+  }
+  if (disciplineMenu){
+    disciplineMenu.choice = dir < 0 ? 0 : 1;
+    renderDisciplineMenu();
     return;
   }
   if (!state) return;
@@ -837,9 +912,7 @@ function render(){
   } else {
     ageText = 'egg';
   }
-  var preAdult = state.hatchedAt && state.stage !== 'adult';
-  hud.textContent = ageText + (state.sick ? ' · sick' : '') + (state.naughty ? ' · naughty' : '') +
-    (preAdult ? ' · disc:' + state.discipline + '/' + DISCIPLINE_MAX : '');
+  hud.textContent = ageText + (state.sick ? ' · sick' : '') + (state.naughty ? ' · naughty' : '');
 
   if (!state.alive){
     overlay.innerHTML = '';
@@ -853,7 +926,7 @@ function render(){
     btn.addEventListener('click', resetGame);
     overlay.appendChild(t); overlay.appendChild(t2); overlay.appendChild(t3); overlay.appendChild(btn);
     overlay.classList.add('show');
-  } else if (!minigame && !feedChoice){
+  } else if (!minigame && !feedChoice && !disciplineMenu){
     overlay.classList.remove('show');
   }
 
