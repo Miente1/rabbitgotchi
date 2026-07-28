@@ -70,7 +70,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b20'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b21'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -104,7 +104,8 @@ var ATTITUDE_LINES = {
   bored:   ['I\'m bored...', 'nobody\'s paying attention to me', '*sigh*', 'play with me?', 'entertain me!'],
   sassy:   ['hmph.', 'whatever.', 'oh, it\'s you.', '*rolls eyes*', 'what do YOU want'],
   sweet:   ['*nuzzles*', 'you\'re the best!', 'yay, you\'re here!', '<3'],
-  happy:   ['!', 'la la la~', '*happy wiggle*', 'life is good!', '*hums a little tune*', 'wheee!']
+  happy:   ['!', 'la la la~', '*happy wiggle*', 'life is good!', '*hums a little tune*', 'wheee!'],
+  petted:  ['♥', 'that feels nice!', '*happy wiggle*', 'more please!', 'yay!', 'hehe~', '*melts*']
 };
 
 var ICONS = [
@@ -1084,8 +1085,9 @@ canvas.addEventListener('click', function(){
   if (now - lastPet < 4000) return;
   lastPet = now;
   state.happiness = clamp(state.happiness + 3);
-  beep(1300,0.05);
-  startAnim('hop');
+  beep(1300,0.06); beep(1600,0.06);
+  startAnim('bounce', 650);
+  showToast(pick(ATTITUDE_LINES.petted));
   render();
 });
 
