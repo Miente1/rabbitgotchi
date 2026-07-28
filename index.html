@@ -67,7 +67,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b15'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b16'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -88,7 +88,8 @@ var ENERGY_AWAKE  = 100/(10*60);  // empty in 10h awake
 var ENERGY_SLEEP  = 100/(4*60);   // full recharge in 4h sleep
 var POOP_CHANCE_PER_MIN = 1/180;  // ~1 poop every 3h on average
 var SICK_BASE_RISK_PER_MIN = 0.001; // ambient sickness risk even under good care — ~75-80% chance of at least one bout over the ~24h baby stage
-var NAUGHTY_CHANCE_PER_MIN = 1/1800; // ~1 naughty episode every ~30h on average — ~4 chances to earn discipline redemption over the 5-day growth window
+var NAUGHTY_MIN_GAP = 20*HOUR, NAUGHTY_MAX_GAP = 28*HOUR; // scheduled (not random-roll) so it's reliably ~once/day, not just an average
+var DISCIPLINE_MAX = 5; // fills over the ~5-day growth window at ~1 naughty episode/day
 
 var ATTITUDE_MIN_MS = 25*1000, ATTITUDE_MAX_MS = 40*1000;
 var ATTITUDE_LINES = {
@@ -170,7 +171,7 @@ function freshState(){
   return {
     stage:'egg', born:now, hatchedAt:null,
     hunger:100, happiness:100, energy:100, health:100, weight:20,
-    poop:0, mistakes:0, sick:false, naughty:false, asleep:false, alive:true,
+    poop:0, mistakes:0, discipline:0, sick:false, naughty:false, nextNaughtyAt:null, asleep:false, alive:true,
     lastTick: now, flags:{}, deathReason:null, evolutionForm:null, lifespanMs:null,
     soundOn:true, firstRun:true
   };
@@ -190,6 +191,7 @@ function clearFlag(flag){ state.flags[flag] = false; }
 function hatch(){
   state.stage = 'baby';
   state.hatchedAt = Date.now();
+  state.nextNaughtyAt = state.hatchedAt + 12*HOUR + Math.random()*12*HOUR; // first episode within 12-24h
   beep(1200,0.12); beep(1600,0.12);
   showToast('It hatched!');
 }
@@ -209,10 +211,11 @@ function checkEvolution(){
     state.stage = 'teen'; beep(900,0.1); showToast('Grew into a teen!');
   } else if (state.stage === 'teen' && age >= TEEN_TO_ADULT){
     state.stage = 'adult';
-    if (state.mistakes <= 1){
+    var netMistakes = Math.max(0, state.mistakes - state.discipline);
+    if (netMistakes <= 1){
       state.evolutionForm = 'good';
       state.lifespanMs = LIFESPAN_GREAT;
-    } else if (state.mistakes <= 4){
+    } else if (netMistakes <= 4){
       state.evolutionForm = 'good';
       state.lifespanMs = LIFESPAN_NORMAL;
     } else {
@@ -261,8 +264,9 @@ function applyDecay(deltaMs){
     if (Math.random() < risk * dMin) state.sick = true;
   }
 
-  if (!state.naughty && !state.asleep && Math.random() < NAUGHTY_CHANCE_PER_MIN * dMin){
+  if (!state.naughty && !state.asleep && state.nextNaughtyAt && Date.now() >= state.nextNaughtyAt){
     state.naughty = true;
+    state.nextNaughtyAt = Date.now() + NAUGHTY_MIN_GAP + Math.random() * (NAUGHTY_MAX_GAP - NAUGHTY_MIN_GAP);
   }
 
   var healthDelta = 0;
@@ -491,15 +495,16 @@ function doSleep(){
 
 function doDiscipline(){
   if (!requireAliveAwakeGrown()) return;
-  state.happiness = clamp(state.happiness - 3);
   if (state.naughty){
     state.naughty = false;
-    state.mistakes = Math.max(0, state.mistakes - 1);
-    showToast('Back in line!');
+    state.happiness = clamp(state.happiness - 3);
+    state.discipline = Math.min(DISCIPLINE_MAX, state.discipline + 1);
+    showToast('Back in line! (' + state.discipline + '/' + DISCIPLINE_MAX + ')');
     beep(500,0.1); beep(650,0.1);
   } else {
-    showToast('That wasn\'t necessary...');
-    beep(350,0.08);
+    state.happiness = clamp(state.happiness - 15);
+    showToast('That was uncalled for!');
+    beep(220,0.2);
   }
 }
 
@@ -832,7 +837,9 @@ function render(){
   } else {
     ageText = 'egg';
   }
-  hud.textContent = ageText + (state.sick ? ' · sick' : '') + (state.naughty ? ' · naughty' : '');
+  var preAdult = state.hatchedAt && state.stage !== 'adult';
+  hud.textContent = ageText + (state.sick ? ' · sick' : '') + (state.naughty ? ' · naughty' : '') +
+    (preAdult ? ' · disc:' + state.discipline + '/' + DISCIPLINE_MAX : '');
 
   if (!state.alive){
     overlay.innerHTML = '';
