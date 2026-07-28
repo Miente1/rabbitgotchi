@@ -34,6 +34,11 @@
   #overlay.show{display:flex;}
   #overlay button{font-family:inherit;font-size:11px;padding:6px 14px;background:#4de861;border:none;color:#000;}
 
+  @keyframes mgCelebrate { 0%{transform:scale(.3) rotate(-10deg);opacity:0;} 60%{transform:scale(1.3) rotate(5deg);opacity:1;} 100%{transform:scale(1) rotate(0);opacity:1;} }
+  @keyframes mgIrritate { 0%,100%{transform:translateX(0);} 20%{transform:translateX(-7px);} 40%{transform:translateX(7px);} 60%{transform:translateX(-5px);} 80%{transform:translateX(5px);} }
+  .mg-win{ animation: mgCelebrate .5s ease; }
+  .mg-lose{ animation: mgIrritate .5s ease; }
+
   #hud{position:absolute;top:26px;left:3px;font-size:8px;color:#333;text-shadow:0 1px 0 rgba(255,255,255,.3);}
   #diag{position:absolute;top:228px;right:3px;font-size:7px;color:rgba(255,255,255,.55);}
 </style>
@@ -62,7 +67,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b14'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b15'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -83,17 +88,19 @@ var ENERGY_AWAKE  = 100/(10*60);  // empty in 10h awake
 var ENERGY_SLEEP  = 100/(4*60);   // full recharge in 4h sleep
 var POOP_CHANCE_PER_MIN = 1/180;  // ~1 poop every 3h on average
 var SICK_BASE_RISK_PER_MIN = 0.001; // ambient sickness risk even under good care — ~75-80% chance of at least one bout over the ~24h baby stage
+var NAUGHTY_CHANCE_PER_MIN = 1/1800; // ~1 naughty episode every ~30h on average — ~4 chances to earn discipline redemption over the 5-day growth window
 
 var ATTITUDE_MIN_MS = 25*1000, ATTITUDE_MAX_MS = 40*1000;
 var ATTITUDE_LINES = {
-  egg:    ['*wiggle*', '...', 'something\'s moving in there', '*tap tap*', 'hello? anyone there?'],
-  sick:   ['I don\'t feel so good...', '*cough*', 'everything\'s spinny...', 'ugh...'],
-  hungry: ['my tummy is rumbling...', 'got any snacks?', '*stomach growls*', 'feed me?'],
-  dirty:  ['it\'s a bit messy in here...', 'ahem, could you clean up?', '*sniffs* something smells...'],
-  bored:  ['I\'m bored...', 'nobody\'s paying attention to me', '*sigh*', 'play with me?', 'entertain me!'],
-  sassy:  ['hmph.', 'whatever.', 'oh, it\'s you.', '*rolls eyes*', 'what do YOU want'],
-  sweet:  ['*nuzzles*', 'you\'re the best!', 'yay, you\'re here!', '<3'],
-  happy:  ['!', 'la la la~', '*happy wiggle*', 'life is good!', '*hums a little tune*', 'wheee!']
+  egg:     ['*wiggle*', '...', 'something\'s moving in there', '*tap tap*', 'hello? anyone there?'],
+  sick:    ['I don\'t feel so good...', '*cough*', 'everything\'s spinny...', 'ugh...'],
+  naughty: ['hmph!', 'not until you discipline me!', 'no way.', '*crosses arms*', 'make me.'],
+  hungry:  ['my tummy is rumbling...', 'got any snacks?', '*stomach growls*', 'feed me?'],
+  dirty:   ['it\'s a bit messy in here...', 'ahem, could you clean up?', '*sniffs* something smells...'],
+  bored:   ['I\'m bored...', 'nobody\'s paying attention to me', '*sigh*', 'play with me?', 'entertain me!'],
+  sassy:   ['hmph.', 'whatever.', 'oh, it\'s you.', '*rolls eyes*', 'what do YOU want'],
+  sweet:   ['*nuzzles*', 'you\'re the best!', 'yay, you\'re here!', '<3'],
+  happy:   ['!', 'la la la~', '*happy wiggle*', 'life is good!', '*hums a little tune*', 'wheee!']
 };
 
 var ICONS = [
@@ -163,7 +170,7 @@ function freshState(){
   return {
     stage:'egg', born:now, hatchedAt:null,
     hunger:100, happiness:100, energy:100, health:100, weight:20,
-    poop:0, mistakes:0, sick:false, asleep:false, alive:true,
+    poop:0, mistakes:0, sick:false, naughty:false, asleep:false, alive:true,
     lastTick: now, flags:{}, deathReason:null, evolutionForm:null, lifespanMs:null,
     soundOn:true, firstRun:true
   };
@@ -254,6 +261,10 @@ function applyDecay(deltaMs){
     if (Math.random() < risk * dMin) state.sick = true;
   }
 
+  if (!state.naughty && !state.asleep && Math.random() < NAUGHTY_CHANCE_PER_MIN * dMin){
+    state.naughty = true;
+  }
+
   var healthDelta = 0;
   if (state.hunger <= 0){ healthDelta -= 3*dMin; markMistake('starve'); } else clearFlag('starve');
   if (state.happiness <= 0){ healthDelta -= 2*dMin; markMistake('sad'); } else clearFlag('sad');
@@ -271,9 +282,51 @@ function requireAliveAwakeGrown(){
   return state.alive && state.stage !== 'egg';
 }
 
-function doFeed(isSnack){
+function doFeed(){
   if (!requireAliveAwakeGrown()) return;
   if (state.asleep){ showToast("It's asleep..."); return; }
+  if (state.naughty){ showToast('It refuses to eat!'); beep(300,0.12); startAnim('shake'); return; }
+  feedChoice = { choice: 0 };
+  renderFeedChoice();
+}
+
+/* ---------- Feed choice: visible Meal/Snack selection ---------- */
+var feedChoice = null; // transient, not persisted: {choice} 0=Meal,1=Snack
+
+function renderFeedChoice(){
+  if (!feedChoice) return;
+  overlay.innerHTML = '';
+
+  var title = document.createElement('div');
+  title.textContent = 'Feed';
+
+  var choices = document.createElement('div');
+  choices.style.display = 'flex'; choices.style.gap = '10px'; choices.style.marginTop = '6px';
+  ['🍔 Meal', '🍪 Snack'].forEach(function(label, i){
+    var b = document.createElement('div');
+    b.textContent = label;
+    b.style.padding = '8px 12px';
+    b.style.border = '2px solid ' + (i === feedChoice.choice ? '#4de861' : '#555');
+    b.style.borderRadius = '8px';
+    b.style.fontSize = '11px';
+    b.addEventListener('click', function(){ feedChoice.choice = i; confirmFeedChoice(); });
+    choices.appendChild(b);
+  });
+
+  var hint = document.createElement('div');
+  hint.style.fontSize = '8px'; hint.style.color = '#999'; hint.style.marginTop = '8px';
+  hint.textContent = 'scroll to choose, press to confirm';
+
+  overlay.appendChild(title); overlay.appendChild(choices); overlay.appendChild(hint);
+  overlay.classList.add('show');
+}
+
+function confirmFeedChoice(){
+  if (!feedChoice) return;
+  var isSnack = feedChoice.choice === 1;
+  feedChoice = null;
+  overlay.classList.remove('show');
+
   if (isSnack){
     state.hunger = clamp(state.hunger + 15);
     state.happiness = clamp(state.happiness + 5);
@@ -285,6 +338,8 @@ function doFeed(isSnack){
     showToast('Yum!');
   }
   beep(700,0.08);
+  render();
+  persist();
 }
 
 function doPlay(){
@@ -294,13 +349,17 @@ function doPlay(){
   startMinigame();
 }
 
-/* ---------- Minigame: Higher or Lower ---------- */
-var minigame = null; // transient, not persisted: {number, choice, resolved}
+/* ---------- Minigame: Higher or Lower, best of 5 ---------- */
+var minigame = null; // transient, not persisted: {number, choice, resolved, round, wins}
+var MG_ROUNDS = 5;
 
 function randNum(){ return 1 + Math.floor(Math.random()*9); }
 
 function startMinigame(){
-  minigame = { number: randNum(), choice: 0, resolved: false };
+  state.energy = clamp(state.energy - 7);
+  state.weight = Math.max(10, state.weight - 2);
+  persist();
+  minigame = { number: randNum(), choice: 0, resolved: false, round: 1, wins: 0 };
   renderMinigame();
 }
 
@@ -309,10 +368,15 @@ function renderMinigame(){
   overlay.innerHTML = '';
 
   var title = document.createElement('div');
-  title.textContent = 'Higher or Lower?';
+  title.style.fontSize = '10px';
+  title.textContent = 'Higher or Lower? — Round ' + minigame.round + '/' + MG_ROUNDS;
+
+  var score = document.createElement('div');
+  score.style.fontSize = '9px'; score.style.color = '#999';
+  score.textContent = 'Wins so far: ' + minigame.wins;
 
   var num = document.createElement('div');
-  num.style.fontSize = '28px'; num.style.fontWeight = 'bold'; num.style.margin = '4px 0';
+  num.style.fontSize = '26px'; num.style.fontWeight = 'bold'; num.style.margin = '2px 0';
   num.textContent = minigame.number;
 
   var choices = document.createElement('div');
@@ -324,19 +388,20 @@ function renderMinigame(){
     b.style.border = '2px solid ' + (i === minigame.choice ? '#4de861' : '#555');
     b.style.borderRadius = '8px';
     b.style.fontSize = '11px';
-    b.addEventListener('click', function(){ minigame.choice = i; resolveMinigame(); });
+    b.addEventListener('click', function(){ minigame.choice = i; resolveRound(); });
     choices.appendChild(b);
   });
 
   var hint = document.createElement('div');
-  hint.style.fontSize = '8px'; hint.style.color = '#999'; hint.style.marginTop = '8px';
+  hint.style.fontSize = '8px'; hint.style.color = '#999'; hint.style.marginTop = '6px';
   hint.textContent = 'scroll to choose, press to guess';
 
-  overlay.appendChild(title); overlay.appendChild(num); overlay.appendChild(choices); overlay.appendChild(hint);
+  overlay.appendChild(title); overlay.appendChild(score); overlay.appendChild(num);
+  overlay.appendChild(choices); overlay.appendChild(hint);
   overlay.classList.add('show');
 }
 
-function resolveMinigame(){
+function resolveRound(){
   if (!minigame || minigame.resolved) return;
   minigame.resolved = true;
 
@@ -344,25 +409,51 @@ function resolveMinigame(){
   while (next === minigame.number) next = randNum(); // avoid ties
   var guessedHigher = minigame.choice === 0;
   var win = (next > minigame.number) === guessedHigher;
+  if (win) minigame.wins++;
 
-  state.energy = clamp(state.energy - 7);
-  state.weight = Math.max(10, state.weight - 2);
-  if (win){
-    state.happiness = clamp(state.happiness + 18);
-    beep(1000,0.07); beep(1300,0.09);
-  } else {
-    state.happiness = clamp(state.happiness - 5);
-    beep(400,0.15);
-  }
+  overlay.innerHTML = '';
+  var res = document.createElement('div');
+  res.className = win ? 'mg-win' : 'mg-lose';
+  res.style.fontSize = '20px'; res.style.color = win ? '#4de861' : '#e85d4d';
+  res.textContent = win ? '🎉 Correct!' : '💢 Wrong!';
+  var detail = document.createElement('div');
+  detail.style.fontSize = '10px'; detail.style.marginTop = '4px';
+  detail.textContent = minigame.number + ' → ' + next;
+  overlay.appendChild(res); overlay.appendChild(detail);
+
+  beep(win ? 1100 : 350, win ? 0.08 : 0.15);
+
+  setTimeout(function(){
+    if (!minigame) return;
+    if (minigame.round >= MG_ROUNDS) finishMinigame();
+    else {
+      minigame.round++;
+      minigame.number = randNum();
+      minigame.choice = 0;
+      minigame.resolved = false;
+      renderMinigame();
+    }
+  }, 900);
+}
+
+function finishMinigame(){
+  var wins = minigame.wins;
+  var overallWin = wins >= 3;
+  var delta = overallWin ? (14 + (wins-3)*4) : -(14 + (2-wins)*4);
+  state.happiness = clamp(state.happiness + delta);
   persist();
 
   overlay.innerHTML = '';
-  var result = document.createElement('div');
-  result.textContent = (win ? 'You win! ' : 'Nope! ') + minigame.number + ' → ' + next;
+  var res = document.createElement('div');
+  res.className = overallWin ? 'mg-win' : 'mg-lose';
+  res.style.fontSize = '16px'; res.style.color = overallWin ? '#4de861' : '#e85d4d';
+  res.textContent = overallWin ? ('You won ' + wins + '/' + MG_ROUNDS + '! 🎉') : ('Lost ' + wins + '/' + MG_ROUNDS + '... 💢');
   var sub = document.createElement('div');
   sub.style.fontSize = '9px'; sub.style.color = '#999'; sub.style.marginTop = '4px';
-  sub.textContent = win ? 'Happiness up!' : 'Happiness down a bit';
-  overlay.appendChild(result); overlay.appendChild(sub);
+  sub.textContent = (delta > 0 ? '+' : '') + delta + ' happiness';
+  overlay.appendChild(res); overlay.appendChild(sub);
+
+  if (overallWin){ beep(1000,0.07); beep(1300,0.09); } else { beep(400,0.2); }
 
   setTimeout(function(){ minigame = null; overlay.classList.remove('show'); render(); }, 1800);
 }
@@ -401,19 +492,26 @@ function doSleep(){
 function doDiscipline(){
   if (!requireAliveAwakeGrown()) return;
   state.happiness = clamp(state.happiness - 3);
-  state.energy = clamp(state.energy + 5);
-  showToast('Scolded');
-  beep(350,0.08);
+  if (state.naughty){
+    state.naughty = false;
+    state.mistakes = Math.max(0, state.mistakes - 1);
+    showToast('Back in line!');
+    beep(500,0.1); beep(650,0.1);
+  } else {
+    showToast('That wasn\'t necessary...');
+    beep(350,0.08);
+  }
 }
 
-function activateSelected(isLong){
+function activateSelected(){
   if (minigame){
-    if (!minigame.resolved) resolveMinigame();
+    if (!minigame.resolved) resolveRound();
     return;
   }
+  if (feedChoice){ confirmFeedChoice(); return; }
   if (!state || !state.alive) return;
   var id = ICONS[selected].id;
-  if (id === 'feed') doFeed(!!isLong);
+  if (id === 'feed') doFeed();
   else if (id === 'play') doPlay();
   else if (id === 'clean') doClean();
   else if (id === 'med') doMedicine();
@@ -504,7 +602,7 @@ function buildMenu(){
     b.textContent = icon.label;
     b.addEventListener('click', function(){
       selected = i;
-      activateSelected(false);
+      activateSelected();
     });
     menuEl.appendChild(b);
   });
@@ -514,6 +612,11 @@ function moveSelection(dir){
   if (minigame && !minigame.resolved){
     minigame.choice = dir < 0 ? 0 : 1;
     renderMinigame();
+    return;
+  }
+  if (feedChoice){
+    feedChoice.choice = dir < 0 ? 0 : 1;
+    renderFeedChoice();
     return;
   }
   if (!state) return;
@@ -729,7 +832,7 @@ function render(){
   } else {
     ageText = 'egg';
   }
-  hud.textContent = ageText + (state.sick ? ' · sick' : '');
+  hud.textContent = ageText + (state.sick ? ' · sick' : '') + (state.naughty ? ' · naughty' : '');
 
   if (!state.alive){
     overlay.innerHTML = '';
@@ -743,7 +846,7 @@ function render(){
     btn.addEventListener('click', resetGame);
     overlay.appendChild(t); overlay.appendChild(t2); overlay.appendChild(t3); overlay.appendChild(btn);
     overlay.classList.add('show');
-  } else if (!minigame){
+  } else if (!minigame && !feedChoice){
     overlay.classList.remove('show');
   }
 
@@ -764,6 +867,7 @@ function triggerAttitude(){
   if (state.stage === 'egg'){ pool = ATTITUDE_LINES.egg; animType = 'shake'; }
   else if (state.asleep){ return; }
   else if (state.sick){ pool = ATTITUDE_LINES.sick; animType = 'shake'; }
+  else if (state.naughty){ pool = ATTITUDE_LINES.naughty; animType = 'shake'; }
   else if (state.hunger <= 25){ pool = ATTITUDE_LINES.hungry; animType = 'shake'; }
   else if (state.poop >= 4){ pool = ATTITUDE_LINES.dirty; animType = 'shake'; }
   else if (state.happiness <= 30){ pool = ATTITUDE_LINES.bored; animType = 'droop'; }
@@ -839,17 +943,17 @@ function updateDiagHud(){
 /* ---------- Input: R1 hardware events ---------- */
 window.addEventListener('scrollUp',   function(){ moveSelection(-1); });
 window.addEventListener('scrollDown', function(){ moveSelection(1); });
-window.addEventListener('sideClick',  function(){ activateSelected(false); });
+window.addEventListener('sideClick',  function(){ activateSelected(); });
 window.addEventListener('longPressStart', function(){ longPressActive = true; });
 window.addEventListener('longPressEnd',   function(){
-  if (longPressActive){ activateSelected(true); longPressActive = false; }
+  if (longPressActive){ activateSelected(); longPressActive = false; }
 });
 
 /* ---------- Input: desktop/browser fallback for testing ---------- */
 document.addEventListener('keydown', function(e){
   if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') moveSelection(-1);
   else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') moveSelection(1);
-  else if (e.key === 'Enter' || e.key === ' ') activateSelected(false);
+  else if (e.key === 'Enter' || e.key === ' ') activateSelected();
 });
 
 /* petting: tap the pet itself for a tiny happiness nudge */

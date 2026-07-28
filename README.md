@@ -12,15 +12,17 @@ Single file: `index.html` (no build step, no backend, no external assets).
 - **Lifespan**: decided once, at the day-5 adult checkpoint, from the same hidden mistake counter that decides the good/bad evolution form. Great care (≤1 mistake) → evolves "good" and lives ~21 days total. Normal care (2–4 mistakes) → evolves "good" and lives ~14 days (the real Tamagotchi's average). Neglectful-but-not-fatal care (5+ mistakes) → evolves "bad" and lives only ~7 days. Severe acute neglect (sustained 0 hunger/happiness, or heavy uncleaned poop) can still kill it outright before that, same as before.
 - Age is displayed in **years**, not days — fixed scale where 70 years = the 14-day normal lifespan (5 years per real day). A well-cared pet living the full 21 days shows ~105 at natural death; a neglected one dying at 7 days shows ~35.
 - Poop spawns randomly and must be cleaned or it hurts Health.
-- Actions: 🍔 Feed (tap = meal, hold PTT = snack), 🎮 Play (Higher/Lower minigame — see below), 🧹 Clean, 💊 Medicine (only helps if actually sick), 💤 Sleep toggle, ✋ Scold.
-- **Play minigame**: shows a number 1–9; scroll to pick Higher or Lower than the next number, press to lock in the guess. Win → happiness +18. Lose → happiness −5 (a real penalty, not just "nothing happens"). Energy/weight cost is the same either way.
+- Actions: 🍔 Feed (visible Meal/Snack picker — see below), 🎮 Play (Higher/Lower minigame — see below), 🧹 Clean, 💊 Medicine (only helps if actually sick), 💤 Sleep toggle, ✋ Discipline (see "Naughty" below).
+- **Feed**: opens a picker with 🍔 Meal and 🍪 Snack; scroll to move the highlight, press to confirm. Meal restores more hunger and adds more weight; Snack restores less hunger but gives a small happiness bump.
+- **Play minigame**: best of 5 rounds. Each round shows a number 1–9; scroll to pick Higher or Lower than the next number, press to lock in the guess. Each round pops a "🎉 Correct!" celebration or "💢 Wrong!" irritation animation. After all 5 rounds, the overall record (not each round) drives the happiness change: win the match (3+/5) → +14 to +22 happiness depending on how decisively; lose the match → −14 to −22. Energy/weight cost is paid once per match, not per round.
+- **Naughty**: occasionally (roughly once every day and a half on average) the pet gets naughty and **refuses to eat** until disciplined — Feed just bounces off with "It refuses to eat!". ✋ Discipline resolves it: costs a little happiness, but also reduces the hidden mistake counter (the same one that decides the good/bad evolution form and lifespan tier), so responding to naughty episodes actively pushes toward a *better* Tamagotchi. Disciplining when it's *not* naughty still costs happiness but gives no mistake-counter benefit — it only helps to actually catch a naughty episode, so spamming it isn't a shortcut. Not resolving naughty episodes has no direct penalty beyond hunger continuing to drop while feeding is blocked, but it also means missing out on those mistake-counter redemption chances.
 - Death shows a tombstone with an option to start a new egg.
 
 ## Controls (real R1 hardware events used)
 
-- Scroll wheel: `scrollUp` / `scrollDown` move the menu selection.
-- Side (PTT) button short press: `sideClick` activates the selected action.
-- Side button held: `longPressStart`/`longPressEnd` — used for the Feed icon to give a snack instead of a meal.
+- Scroll wheel: `scrollUp` / `scrollDown` move the menu selection, or the highlighted choice in the Feed picker / minigame.
+- Side (PTT) button short press: `sideClick` activates the selected action or confirms the current choice.
+- Side button held: `longPressStart`/`longPressEnd` also confirms (same as a short press) — no longer has a distinct meaning of its own.
 - Tap the pet directly: small happiness nudge (petting).
 - Also works with mouse/touch clicks on the menu icons, and arrow keys + Enter, for testing in a normal desktop browser.
 
