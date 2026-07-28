@@ -70,7 +70,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b23'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b24'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -87,6 +87,7 @@ var YEARS_PER_MS = 70 / LIFESPAN_NORMAL; // fixed scale: 70 "life years" == the 
 
 var HUNGER_RATE   = 100/(6*60);   // per minute, empty in 6h
 var HAPPY_RATE    = 100/(8*60);   // empty in 8h
+var GRUMPY_EXTRA_HAPPY_RATE = HAPPY_RATE; // while naughty/grumpy, happiness drains at 2x the normal rate
 var ENERGY_AWAKE  = 100/(10*60);  // empty in 10h awake
 var ENERGY_SLEEP  = 100/(4*60);   // full recharge in 4h sleep
 var POOP_CHANCE_PER_MIN = 1/180;  // ~1 poop every 3h on average
@@ -109,6 +110,7 @@ var ATTITUDE_LINES = {
   happy:   ['!', 'la la la~', '*happy wiggle*', 'life is good!', '*hums a little tune*', 'wheee!'],
   petted:  ['♥', 'that feels nice!', '*happy wiggle*', 'more please!', 'yay!', 'hehe~', '*melts*']
 };
+var NEED_LINE_POOLS = { hunger: ATTITUDE_LINES.hungry, happiness: ATTITUDE_LINES.bored, energy: ATTITUDE_LINES.tired };
 
 var ICONS = [
   {id:'feed',       label:'🍔', name:'Feed'},
@@ -253,7 +255,8 @@ function applyDecay(deltaMs){
 
   if (!state.asleep){
     state.hunger    = clamp(state.hunger    - HUNGER_RATE * dMin);
-    state.happiness = clamp(state.happiness - HAPPY_RATE  * dMin);
+    var happyRate = HAPPY_RATE + (state.naughty ? GRUMPY_EXTRA_HAPPY_RATE : 0);
+    state.happiness = clamp(state.happiness - happyRate * dMin);
     state.energy    = clamp(state.energy    - ENERGY_AWAKE * dMin);
   } else {
     state.energy = clamp(state.energy + ENERGY_SLEEP * dMin);
@@ -278,14 +281,14 @@ function applyDecay(deltaMs){
     // cry about THAT, using the exact same lines a genuine call would use —
     // the player has to actually check the bar to tell it's a lie.
     var candidates = [
-      ['hunger', state.hunger, ATTITUDE_LINES.hungry],
-      ['happiness', state.happiness, ATTITUDE_LINES.bored],
-      ['energy', state.energy, ATTITUDE_LINES.tired]
+      ['hunger', state.hunger],
+      ['happiness', state.happiness],
+      ['energy', state.energy]
     ];
     candidates.sort(function(a, b){ return b[1] - a[1]; });
     state.naughtyStat = candidates[0][0];
     state.naughtyDeadline = Date.now() + NAUGHTY_WINDOW_MS;
-    showToast(pick(candidates[0][2]));
+    showToast(pick(NEED_LINE_POOLS[state.naughtyStat]));
     startAnim('shake');
     beep(500, 0.1);
   }
@@ -1006,7 +1009,7 @@ function triggerAttitude(){
   if (state.stage === 'egg'){ pool = ATTITUDE_LINES.egg; animType = 'shake'; }
   else if (state.asleep){ return; }
   else if (state.sick){ pool = ATTITUDE_LINES.sick; animType = 'shake'; }
-  else if (state.naughty){ pool = ATTITUDE_LINES.naughty; animType = 'shake'; }
+  else if (state.naughty){ pool = (state.naughtyStat && NEED_LINE_POOLS[state.naughtyStat]) || ATTITUDE_LINES.naughty; animType = 'shake'; }
   else if (state.hunger <= 25){ pool = ATTITUDE_LINES.hungry; animType = 'shake'; }
   else if (state.energy <= 20){ pool = ATTITUDE_LINES.tired; animType = 'droop'; }
   else if (state.poop >= 4){ pool = ATTITUDE_LINES.dirty; animType = 'shake'; }
