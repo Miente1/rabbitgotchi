@@ -70,7 +70,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b17'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b18'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -989,10 +989,25 @@ function startLoops(){
   });
 }
 
+function hydrateState(loaded){
+  // Fill in any fields missing from an older save (from before that field
+  // existed) with fresh defaults, instead of leaving them undefined.
+  var template = freshState();
+  for (var key in template){
+    if (loaded[key] === undefined) loaded[key] = template[key];
+  }
+  // Special case: a pet that already hatched under an older save needs its
+  // own naughty schedule, not the null a fresh unhatched egg gets by default.
+  if (loaded.hatchedAt && !loaded.nextNaughtyAt){
+    loaded.nextNaughtyAt = Date.now() + 12*HOUR + Math.random()*12*HOUR;
+  }
+  return loaded;
+}
+
 function init(){
   Storage.get(STORE_KEY).then(function(result){
     if (result.value){
-      state = result.value;
+      state = hydrateState(result.value);
       var elapsed = Date.now() - (state.lastTick || Date.now());
       if (elapsed > 0) applyDecay(elapsed);
     } else {
