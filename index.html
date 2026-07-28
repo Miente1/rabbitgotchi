@@ -62,7 +62,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b11'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b12'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -82,6 +82,7 @@ var HAPPY_RATE    = 100/(8*60);   // empty in 8h
 var ENERGY_AWAKE  = 100/(10*60);  // empty in 10h awake
 var ENERGY_SLEEP  = 100/(4*60);   // full recharge in 4h sleep
 var POOP_CHANCE_PER_MIN = 1/180;  // ~1 poop every 3h on average
+var SICK_BASE_RISK_PER_MIN = 0.001; // ambient sickness risk even under good care — ~75-80% chance of at least one bout over the ~24h baby stage
 
 var ATTITUDE_MIN_MS = 25*1000, ATTITUDE_MAX_MS = 40*1000;
 var ATTITUDE_LINES = {
@@ -246,11 +247,11 @@ function applyDecay(deltaMs){
   if (Math.random() < POOP_CHANCE_PER_MIN * dMin) state.poop = Math.min(state.poop + 1, 8);
 
   if (!state.sick){
-    var risk = 0;
+    var risk = SICK_BASE_RISK_PER_MIN; // small ambient risk even under good care
     if (state.poop >= 4) risk += 0.02;
     if (state.hunger <= 10) risk += 0.02;
     if (state.happiness <= 10) risk += 0.02;
-    if (risk > 0 && Math.random() < risk * dMin) state.sick = true;
+    if (Math.random() < risk * dMin) state.sick = true;
   }
 
   var healthDelta = 0;
