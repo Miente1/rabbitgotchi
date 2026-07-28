@@ -70,7 +70,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b18'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b19'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -462,7 +462,18 @@ function finishMinigame(){
 
   if (overallWin){ beep(1000,0.07); beep(1300,0.09); } else { beep(400,0.2); }
 
-  setTimeout(function(){ minigame = null; overlay.classList.remove('show'); render(); }, 1800);
+  setTimeout(function(){
+    minigame = null;
+    overlay.classList.remove('show');
+    render();
+    if (overallWin){
+      startAnim('celebrate', 1500);
+      showToast('We won! 🎉');
+      beep(1200,0.05); beep(1500,0.05); beep(1800,0.08);
+    } else {
+      startAnim('droop', 700);
+    }
+  }, 1800);
 }
 
 function doClean(){
@@ -823,6 +834,12 @@ function drawPet(){
     else if (anim.type === 'hop') cy -= bounceEase(t) * 7;
     else if (anim.type === 'shake') cx += Math.sin(t*Math.PI*10) * 6 * (1-t);
     else if (anim.type === 'droop') cy += Math.sin(t*Math.PI) * 6;
+    else if (anim.type === 'celebrate'){
+      var cycles = 3;
+      var ct = (t * cycles) % 1;
+      cy -= bounceEase(ct) * 16;
+      cx += Math.sin(t * Math.PI * cycles * 2) * 4;
+    }
   }
 
   if (state.stage === 'egg'){
