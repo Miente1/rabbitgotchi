@@ -62,7 +62,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b13'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b14'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -345,7 +345,7 @@ function resolveMinigame(){
   var guessedHigher = minigame.choice === 0;
   var win = (next > minigame.number) === guessedHigher;
 
-  state.energy = clamp(state.energy - 12);
+  state.energy = clamp(state.energy - 7);
   state.weight = Math.max(10, state.weight - 2);
   if (win){
     state.happiness = clamp(state.happiness + 18);
