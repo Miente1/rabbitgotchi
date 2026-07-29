@@ -70,7 +70,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b29'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b30'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -93,7 +93,7 @@ var ENERGY_SLEEP  = 100/(4*60);   // full recharge in 4h sleep
 var POOP_CHANCE_PER_MIN = 1/180;  // ~1 poop every 3h on average
 var SLEEP_PACE = 1/3;  // while asleep, hunger/poop/health run at 1/3 the awake rate; tuned so hunger (the only sleep-death path) empties in ~18h, guaranteeing a full-bars pet survives 16h+ asleep
 var SICK_BASE_RISK_PER_MIN = 0.001; // ambient sickness risk even under good care — ~75-80% chance of at least one bout over the ~24h baby stage
-var SICK_HEALTH_RATE = 100/(2*60); // an untreated sickness drains health to 0 in ~2h (was a brutal 25 min), giving a fair window to notice and give medicine
+var SICK_HEALTH_RATE = 100/(3*60); // an untreated sickness drains health to 0 in ~3h (was a brutal 25 min), giving a fair window to notice and give medicine
 var NAUGHTY_MIN_GAP = 20*HOUR, NAUGHTY_MAX_GAP = 28*HOUR; // scheduled (not random-roll) so it's reliably ~once/day, not just an average
 var NAUGHTY_WINDOW_MS = 3*HOUR; // time to catch a false call via Discipline before it counts as a missed mistake
 var DISCIPLINE_MAX = 5; // fills over the ~5-day growth window at ~1 naughty episode/day
