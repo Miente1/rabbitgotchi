@@ -70,7 +70,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b27'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b28'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -91,6 +91,7 @@ var GRUMPY_EXTRA_HAPPY_RATE = HAPPY_RATE; // while naughty/grumpy, happiness dra
 var ENERGY_AWAKE  = 100/(10*60);  // empty in 10h awake
 var ENERGY_SLEEP  = 100/(4*60);   // full recharge in 4h sleep
 var POOP_CHANCE_PER_MIN = 1/180;  // ~1 poop every 3h on average
+var SLEEP_PACE = 1/3;  // while asleep, hunger/poop/health run at 1/3 the awake rate; tuned so hunger (the only sleep-death path) empties in ~18h, guaranteeing a full-bars pet survives 16h+ asleep
 var SICK_BASE_RISK_PER_MIN = 0.001; // ambient sickness risk even under good care — ~75-80% chance of at least one bout over the ~24h baby stage
 var NAUGHTY_MIN_GAP = 20*HOUR, NAUGHTY_MAX_GAP = 28*HOUR; // scheduled (not random-roll) so it's reliably ~once/day, not just an average
 var NAUGHTY_WINDOW_MS = 3*HOUR; // time to catch a false call via Discipline before it counts as a missed mistake
@@ -253,13 +254,14 @@ function applyDecay(deltaMs){
   checkOldAge();
   if (!state.alive) return;
 
-  // While asleep, hunger/poop/health all run at HALF the awake pace, energy
-  // recharges instead of draining, and happiness holds steady. Sickness still
-  // rolls at the normal rate but is DEFERRED: it's held as pendingSick and
-  // only becomes a real (health-draining) illness when the pet wakes up, so
-  // it can never silently drain health to death overnight while the player
-  // has no way to give medicine.
-  var pace = state.asleep ? 0.5 : 1;
+  // While asleep, hunger/poop/health all run at SLEEP_PACE (1/3) the awake
+  // pace, energy recharges instead of draining, and happiness holds steady.
+  // Sickness still rolls at the normal rate but is DEFERRED: it's held as
+  // pendingSick and only becomes a real (health-draining) illness on wake-up.
+  // Poop is also blocked from draining health while asleep (below), so hunger
+  // is the ONLY sleep-death path — deterministic and tuned so a full-bars pet
+  // survives 16h+ asleep no matter what the RNG does.
+  var pace = state.asleep ? SLEEP_PACE : 1;
 
   if (state.asleep){
     state.energy = clamp(state.energy + ENERGY_SLEEP * dMin);
@@ -312,14 +314,14 @@ function applyDecay(deltaMs){
     showToast('Missed it... 😕');
   }
 
-  // Health consequences run at half pace while asleep (via `pace`). Sickness
-  // is deferred while asleep (state.sick stays false), so its heavy -4/min hit
-  // can't apply overnight — the only sleep-time health drains are from hunger
-  // hitting 0 or a big poop pile, both halved and both slow to reach.
+  // Health runs at SLEEP_PACE while asleep. Sickness is deferred (state.sick
+  // stays false while asleep) and poop deals NO health damage while asleep —
+  // so hunger hitting 0 is the sole possible sleep-death path, and hunger is
+  // tuned to take ~18h from full, guaranteeing the 16h survival floor.
   var healthDelta = 0;
   if (state.hunger <= 0){ healthDelta -= 3*dMin*pace; markMistake('starve'); } else clearFlag('starve');
   if (state.happiness <= 0){ healthDelta -= 2*dMin*pace; markMistake('sad'); } else clearFlag('sad');
-  if (state.poop >= 5){ healthDelta -= 2*dMin*pace; markMistake('dirty'); } else clearFlag('dirty');
+  if (state.poop >= 5){ if (!state.asleep) healthDelta -= 2*dMin; markMistake('dirty'); } else clearFlag('dirty');
   if (state.sick) healthDelta -= 4*dMin*pace;
   if (healthDelta === 0 && state.hunger > 50 && state.happiness > 50 && state.poop < 3){
     healthDelta += 1*dMin*pace;
