@@ -70,7 +70,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b24'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b25'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -301,16 +301,21 @@ function applyDecay(deltaMs){
     showToast('Missed it... 😕');
   }
 
-  var healthDelta = 0;
-  if (state.hunger <= 0){ healthDelta -= 3*dMin; markMistake('starve'); } else clearFlag('starve');
-  if (state.happiness <= 0){ healthDelta -= 2*dMin; markMistake('sad'); } else clearFlag('sad');
-  if (state.poop >= 5){ healthDelta -= 2*dMin; markMistake('dirty'); } else clearFlag('dirty');
-  if (state.sick) healthDelta -= 4*dMin;
-  if (healthDelta === 0 && state.hunger > 50 && state.happiness > 50 && state.poop < 3){
-    healthDelta += 1*dMin;
+  // Health consequences are frozen while asleep: the player has no way to
+  // feed/play/discipline a sleeping pet, so it must not be able to take
+  // damage (let alone die) for conditions it had no chance to fix.
+  if (!state.asleep){
+    var healthDelta = 0;
+    if (state.hunger <= 0){ healthDelta -= 3*dMin; markMistake('starve'); } else clearFlag('starve');
+    if (state.happiness <= 0){ healthDelta -= 2*dMin; markMistake('sad'); } else clearFlag('sad');
+    if (state.poop >= 5){ healthDelta -= 2*dMin; markMistake('dirty'); } else clearFlag('dirty');
+    if (state.sick) healthDelta -= 4*dMin;
+    if (healthDelta === 0 && state.hunger > 50 && state.happiness > 50 && state.poop < 3){
+      healthDelta += 1*dMin;
+    }
+    state.health = clamp(state.health + healthDelta);
+    if (state.health <= 0) die('neglect');
   }
-  state.health = clamp(state.health + healthDelta);
-  if (state.health <= 0) die('neglect');
 }
 
 /* ---------- Actions ---------- */
