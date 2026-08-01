@@ -70,7 +70,7 @@
 "use strict";
 
 /* ---------- Constants ---------- */
-var BUILD_ID = 'b31'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
+var BUILD_ID = 'b32'; // bump on every deploy — shown on screen so we can tell if the device is running stale cached code
 var MIN = 60*1000, HOUR = 60*MIN, DAY = 24*HOUR;
 var EGG_HATCH_MS   = 5*MIN;
 var BABY_TO_CHILD  = 1*DAY;
@@ -355,11 +355,12 @@ function renderFeedChoice(){
   title.textContent = 'Feed';
 
   var choices = document.createElement('div');
-  choices.style.display = 'flex'; choices.style.gap = '10px'; choices.style.marginTop = '6px';
-  ['🍔 Meal', '🍪 Snack'].forEach(function(label, i){
+  choices.style.display = 'flex'; choices.style.flexWrap = 'wrap'; choices.style.justifyContent = 'center';
+  choices.style.gap = '8px'; choices.style.marginTop = '6px';
+  ['🍔 Meal', '🍪 Snack', '↩ Back'].forEach(function(label, i){
     var b = document.createElement('div');
     b.textContent = label;
-    b.style.padding = '8px 12px';
+    b.style.padding = '7px 10px';
     b.style.border = '2px solid ' + (i === feedChoice.choice ? '#4de861' : '#555');
     b.style.borderRadius = '8px';
     b.style.fontSize = '11px';
@@ -377,10 +378,13 @@ function renderFeedChoice(){
 
 function confirmFeedChoice(){
   if (!feedChoice) return;
-  var isSnack = feedChoice.choice === 1;
+  var choice = feedChoice.choice;
   feedChoice = null;
   overlay.classList.remove('show');
 
+  if (choice === 2){ render(); return; } // Back — cancel, no feeding
+
+  var isSnack = choice === 1;
   if (isSnack){
     state.hunger = clamp(state.hunger + 15);
     state.happiness = clamp(state.happiness + 5);
@@ -410,9 +414,8 @@ var MG_ROUNDS = 5;
 function randNum(){ return 1 + Math.floor(Math.random()*9); }
 
 function startMinigame(){
-  state.energy = clamp(state.energy - 7);
-  state.weight = Math.max(10, state.weight - 2);
-  persist();
+  // Energy/weight cost is charged on the first actual guess (see resolveRound),
+  // not here — so opening Play and backing straight out is free.
   minigame = { number: randNum(), choice: 0, resolved: false, round: 1, wins: 0 };
   renderMinigame();
 }
@@ -434,8 +437,11 @@ function renderMinigame(){
   num.textContent = minigame.number;
 
   var choices = document.createElement('div');
-  choices.style.display = 'flex'; choices.style.gap = '10px';
-  ['▲ Higher', '▼ Lower'].forEach(function(label, i){
+  choices.style.display = 'flex'; choices.style.flexWrap = 'wrap'; choices.style.justifyContent = 'center';
+  choices.style.gap = '8px';
+  // Back is only offered on round 1 — once you've made your first guess you're committed to the match.
+  var opts = minigame.round === 1 ? ['▲ Higher', '▼ Lower', '↩ Back'] : ['▲ Higher', '▼ Lower'];
+  opts.forEach(function(label, i){
     var b = document.createElement('div');
     b.textContent = label;
     b.style.padding = '6px 10px';
@@ -457,6 +463,22 @@ function renderMinigame(){
 
 function resolveRound(){
   if (!minigame || minigame.resolved) return;
+
+  // Round 1 offers a "Back" option (index 2) — bail out with no cost.
+  if (minigame.round === 1 && minigame.choice === 2){
+    minigame = null;
+    overlay.classList.remove('show');
+    render();
+    return;
+  }
+
+  // First actual guess commits to the match: charge the energy/weight cost once.
+  if (minigame.round === 1){
+    state.energy = clamp(state.energy - 7);
+    state.weight = Math.max(10, state.weight - 2);
+    persist();
+  }
+
   minigame.resolved = true;
 
   var next = randNum();
@@ -762,19 +784,23 @@ function buildMenu(){
   });
 }
 
+function cycleChoice(cur, dir, n){
+  return (cur + (dir < 0 ? -1 : 1) + n) % n;
+}
+
 function moveSelection(dir){
   if (minigame && !minigame.resolved){
-    minigame.choice = dir < 0 ? 0 : 1;
+    minigame.choice = cycleChoice(minigame.choice, dir, minigame.round === 1 ? 3 : 2);
     renderMinigame();
     return;
   }
   if (feedChoice){
-    feedChoice.choice = dir < 0 ? 0 : 1;
+    feedChoice.choice = cycleChoice(feedChoice.choice, dir, 3);
     renderFeedChoice();
     return;
   }
   if (disciplineMenu){
-    disciplineMenu.choice = dir < 0 ? 0 : 1;
+    disciplineMenu.choice = cycleChoice(disciplineMenu.choice, dir, 2);
     renderDisciplineMenu();
     return;
   }
